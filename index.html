@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+
+<head>
+    <title>Proto26</title>
+    <script src="game.js" defer></script>
+    <link rel="stylesheet" href="main.css">
+    <meta name="viewport" content="width=1200">
+</head>
+
+<body>
+    <div id="center">
+        <div id="center-top">Monday 1900/01/01 7:00</div>
+        <div id="main-transition"></div>
+        <div id="main"></div>
+    </div>
+    <div id="player-info">
+        <div id="player-info-left">
+            <div id="title" data-tooltip-title="Title" data-tooltip-text="Your title can change depending on your actions in the world">Unknown</div>
+            <div id="level" data-tooltip-title="Level & Rank" data-tooltip-text="Shows your current level and rank. Rank is based off your battle stats">Level 0 G-</div>
+            <div class="bar-parent" id="healthbar">
+                <div class="bar-fill" id="healthbar-fill"></div>
+                <div class="bar-text" id="healthbar-text" data-tooltip-title="Health" data-tooltip-text="Reaching 0 health points causes you to lose a battle">HP: 10/10</div>
+            </div>
+            <div class="bar-parent" id="xp-bar">
+                <div class="bar-fill" id="xp-bar-fill"></div>
+                <div class="bar-text" id="xp-bar-text" data-tooltip-title="Experience" data-tooltip-text="Experience is needed to level up in order to increase your maximum health">XP: 0/50</div>
+            </div>
+        </div>
+        <div id="player-info-divider"></div>
+        <div id="player-info-right">
+            <div id="stat-str" data-tooltip-title="Strength" data-tooltip-text="Increases damage dealt">Str: 1.00</div>
+            <div id="stat-def" data-tooltip-title="Defense" data-tooltip-text="Reduces incoming damage">Def: 1.00</div>
+            <div id="stat-spd" data-tooltip-title="Speed" data-tooltip-text="Increases chances of hitting">Spd: 1.00</div>
+            <div id="stat-dex" data-tooltip-title="Dexterity" data-tooltip-text="Increases chances of dodging attacks">Dex: 1.00</div>
+        </div>
+    </div>
+    <div id="sidebar">
+        <div id="game-title">Proto26 v?</div>
+        <div id="menu-buttons-holder">
+            <button class="menu-button" id="inventory-button" style="border-color: #7777cc;">Inventory</button>
+            <button class="menu-button" id="skills-button">Skills</button>
+        </div>
+
+        <div class="sidebar-menu" id="sidebar-menu-inventory">
+            <div class="sidebar-menu-title">Inventory</div>
+            <div id="inventory-table"></div>
+        </div>
+
+        <div class="sidebar-menu" id="sidebar-menu-skills" style="display: none;">
+            <div class="sidebar-menu-title">Skills</div>
+            <div id="skill-table"></div>
+        </div>
+    </div>
+    <div id="bottombar"></div>
+    <div id="attack-info">
+        <div id="attack-info-left" style="display: none;">
+            <div id="enemy-name">Unknown Enemy</div>
+            <div class="bar-parent" id="enemy-healthbar">
+                <div class="bar-fill" id="enemy-healthbar-fill"></div>
+                <div class="bar-text" id="enemy-healthbar-text" data-tooltip-title="Health" data-tooltip-text="Reducing this to 0 causes you to win the battle">HP: 10/10</div>
+            </div>
+        </div>
+        <div id="attack-info-divider" style="display: none;"></div>
+        <div id="attack-info-right" style="display: none;">
+            <div id="enemy-stat-str" data-tooltip-title="Strength" data-tooltip-text="Increases damage dealt">Str: 1.00</div>
+            <div id="enemy-stat-def" data-tooltip-title="Defense" data-tooltip-text="Reduces incoming damage">Def: 1.00</div>
+            <div id="enemy-stat-spd" data-tooltip-title="Speed" data-tooltip-text="Increases chances of hitting">Spd: 1.00</div>
+            <div id="enemy-stat-dex" data-tooltip-title="Dexterity" data-tooltip-text="Increases chances of dodging attacks">Dex: 1.00</div>
+        </div>
+    </div>
+    <div id="log"></div>
+    <div id="tooltip">
+        <div id="tooltip-title"></div>
+        <hr>
+        <div id="tooltip-text"></div>
+    </div>
+</body>
