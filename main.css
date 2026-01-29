@@ -71,9 +71,21 @@ body {
     color: #ffffff;
 }
 
-#inventory-table {
+#inventory-table, #storage-table {
     border: 1px solid #555555;
     font-size: 16px;
+}
+
+#inventory-holder {
+    text-align: center;
+    position: relative;
+}
+
+#inventory-weight {
+    display: inline;
+    position: absolute;
+    right: 0;
+    bottom: 0;
 }
 
 .item-parent {
@@ -81,6 +93,10 @@ body {
     height: 20px;
     border-top: 1px solid #555555;
     border-bottom: 1px solid #555555;
+}
+
+.item-parent:hover {
+    background-color: #444444;
 }
 
 .item-text {

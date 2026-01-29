@@ -1,4 +1,4 @@
-const VERSION = "0.1.1"
+const VERSION = "0.2"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -8,7 +8,6 @@ var day = 0
 var oldScene = ""
 var currentScene = ""
 var health = 10
-var maxHealth = 10
 var xp = 0
 var title = "Unknown"
 var travelInfo = {
@@ -39,6 +38,9 @@ var checks = {}
 var logAutoScroll = true
 var skills = {}
 var inventory = {}
+var storage = {}
+var storageAccess = false
+var inventoryWeight = 0
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -103,7 +105,7 @@ function formatTime(time, day, timeOnly=false) {
     const month = String(baseDate.getMonth() + 1).padStart(2, "0")
     const date = String(baseDate.getDate()).padStart(2, "0")
 
-    const timeString = `${hours}:${String(minutes).padStart(2, "0")}`
+    const timeString = `${hours}:${String(Math.round(minutes)).padStart(2, "0")}`
     if (timeOnly) {
         return timeString
     }
@@ -123,11 +125,14 @@ function xpForLevel(level, r = 1.1) {
     return levelToXp(level + 1, r) - levelToXp(level, r)
 }
 
-
 function xpIntoLevel(xp, r = 1.1) {
     const level = xpToLevel(xp, false, r)
     const levelStartXp = levelToXp(level, r)
     return Math.max(0, xp - levelStartXp)
+}
+
+function calcMaxHp(level) {
+    return Math.round(2 * level ** 1.5 + level + 10)
 }
 
 function updateLevelText(xp) {
@@ -136,8 +141,8 @@ function updateLevelText(xp) {
 
 function updateBar(bar) {
     if (bar == "health") {
-        document.getElementById("healthbar-text").textContent = `HP: ${health}/${maxHealth}`
-        document.getElementById("healthbar-fill").style.width = `${health / maxHealth * 100}%`
+        document.getElementById("healthbar-text").textContent = `HP: ${health}/${calcMaxHp(xpToLevel(xp))}`
+        document.getElementById("healthbar-fill").style.width = `${health / calcMaxHp(xpToLevel(xp)) * 100}%`
     } else if (bar == "xp") {
         document.getElementById("xp-bar-text").textContent = `XP: ${Math.round(xpIntoLevel(xp))}/${Math.round(xpForLevel(xpToLevel(xp)))}`
         document.getElementById("xp-bar-fill").style.width = `${xpIntoLevel(xp) / xpForLevel(xpToLevel(xp)) * 100}%`
@@ -149,10 +154,10 @@ function updateBar(bar) {
 }
 
 function updateStats() {
-    document.getElementById("stat-str").textContent = `Str: ${battleStats['str'].toFixed(2)}`
-    document.getElementById("stat-def").textContent = `Def: ${battleStats['def'].toFixed(2)}`
-    document.getElementById("stat-spd").textContent = `Spd: ${battleStats['spd'].toFixed(2)}`
-    document.getElementById("stat-dex").textContent = `Dex: ${battleStats['dex'].toFixed(2)}`
+    document.getElementById("stat-str").textContent = `Str: ${formatNumber(battleStats['str'])}`
+    document.getElementById("stat-def").textContent = `Def: ${formatNumber(battleStats['def'])}`
+    document.getElementById("stat-spd").textContent = `Spd: ${formatNumber(battleStats['spd'])}`
+    document.getElementById("stat-dex").textContent = `Dex: ${formatNumber(battleStats['dex'])}`
 }
 
 function colorGen(hex, text) {
@@ -233,7 +238,7 @@ function generateEnemy(enemyName) {
         } else {
             combatData['enemyStats'][stat] = enemy[stat]
         }
-        document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${combatData['enemyStats'][stat].toFixed(2)}`
+        document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
     }
 
     document.getElementById("enemy-name").textContent = enemy['name']
@@ -344,22 +349,30 @@ function increaseSkill(skill, skillXp) {
 }
 
 function formatNumber(num) {
-    if (num < 1000) {return num.toFixed(2)}
+    if (!isFinite(num)) return "inf"
 
-    const units = ["k", "M", "B", "T", "Qa", "Qt", "Sx", "Sp", "Oc", "No"]
-    const exp = Math.floor(Math.log10(num) / 3)
-    if (exp > units.length) {
-        return num.toExponential(2).replace("+", "")
+    const sign = num < 0 ? "-" : ""
+    num = Math.abs(num)
+
+    const units = ["", "k", "M", "B", "T", "Qa", "Qt", "Sx", "Sp", "Oc", "No"]
+    const exp = Math.max(0, Math.floor(Math.log10(num) / 3))
+
+    if (exp >= units.length) {
+        return sign + num.toExponential(2).replace("+", "")
     }
-    const value = num / 1000 ** exp
 
+    const value = num / 1000 ** exp
     const decimals = value < 10 ? 2 : value < 100 ? 1 : 0
 
-    return value.toFixed(decimals).replace(/\.0+$/, "") + units[exp - 1]
+    return sign + value.toFixed(decimals).replace(/\.0+$/, "") + units[exp]
 }
 
 function getMovementSpeed() {
-    return 50 + getSkillLevel("walking") * 3
+    let inventoryMulti = 1
+    if (inventoryWeight > 0) {
+        inventoryMulti = Math.min(getMaxWeight() / inventoryWeight, 1)
+    }
+    return (50 + getSkillLevel("walking") * 3) * inventoryMulti
 }
 
 function getRandomLoot(weightedDict) {
@@ -411,15 +424,68 @@ function changeInventory(item, amount) {
     if (amount > 0) {
         insertLog(`Obtained ${colorGen("#ccccff", `x${amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
     }
+    if (itemData[item]['weight']) {
+        const maxWeight = getMaxWeight()
+        inventoryWeight += itemData[item]['weight'] * amount
+        document.getElementById("inventory-weight").textContent = `${formatNumber(inventoryWeight)}g / ${formatNumber(maxWeight)}g`
+        if (inventoryWeight > maxWeight * 4) {
+            document.getElementById("inventory-weight").style.color = "#ff0000"
+        } else if (inventoryWeight > maxWeight * 2) {
+            document.getElementById("inventory-weight").style.color = "#ff8800"
+        } else if (inventoryWeight > maxWeight) {
+            document.getElementById("inventory-weight").style.color = "#ffff00"
+        } else {
+            document.getElementById("inventory-weight").style.color = ""
+        }
+    }
+}
+
+function changeStorage(item, amount) {
+    if (storage[item] == undefined) {
+        if (amount <= 0) {return false}
+        storage[item] = amount
+        const itemParent = document.createElement("div")
+        itemParent.className = "item-parent"
+        itemParent.id = `storage-item-${item}`
+        itemParent.setAttribute("data-tooltip-title", itemData[item]['name'])
+        itemParent.setAttribute("data-tooltip-text", itemData[item]['desc'])
+
+        const itemText = document.createElement("span")
+        itemText.className = "item-text"
+        itemText.textContent = itemData[item]['name']
+
+        const itemQuantity = document.createElement("span")
+        itemQuantity.className = "item-quantity"
+        itemQuantity.textContent = `x${storage[item]}`
+
+        itemParent.appendChild(itemText)
+        itemParent.appendChild(itemQuantity)
+        document.getElementById("storage-table").appendChild(itemParent)
+    } else {
+        if (storage[item] + amount < 0) {return false}
+        storage[item] += amount
+
+        if (storage[item] == 0) {
+            delete storage[item]
+            document.getElementById(`storage-item-${item}`).remove()
+        } else {
+            document.getElementById(`storage-item-${item}`).getElementsByClassName("item-quantity")[0].textContent = `x${storage[item]}`
+        }
+    }
+    if (amount > 0) {
+        insertLog(`Deposited ${colorGen("#ccccff", `x${amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
+    }
 }
 
 function increaseXp(amount) {
     const currentLevel = xpToLevel(xp)
     xp += amount
     updateBar("xp")
-    updateLevelText()
+    updateLevelText(xp)
     insertLog(colorGen("#6666ff", `+${amount} XP`))
     if (currentLevel < xpToLevel(xp)) {
+        health += calcMaxHp(xpToLevel(xp)) - calcMaxHp(currentLevel)
+        updateBar("health")
         insertLog(colorGen("#88ccff", `Levelled up to ${xpToLevel(xp)}`))
     }
 }
@@ -430,6 +496,61 @@ function getSkillLevel(skill) {
     } else {
         return xpToLevel(skills[skill], false, skillData[skill]['scaling'])
     }
+}
+
+function itemClickDetector(e, storage=false) {
+    let item = null
+    if (storage == false) {
+        if (e.target.id.startsWith("item-")) {
+            item = e.target.id.replace("item-", "")
+        } else if (e.target.parentElement.id.startsWith("item-")) {
+            item = e.target.parentElement.id.replace("item-", "")
+        }
+    } else if (storage == true) {
+        if (e.target.id.startsWith("storage-item-")) {
+            item = e.target.id.replace("storage-item-", "")
+        } else if (e.target.parentElement.id.startsWith("storage-item-")) {
+            item = e.target.parentElement.id.replace("storage-item-", "")
+        }
+    }
+
+    if (item != null) {
+        if (storage == false) {
+            changeInventory(item, -1)
+            changeStorage(item, 1)
+        } else if (storage == true) {
+            changeStorage(item, -1)
+            changeInventory(item, 1)
+        }
+    }
+}
+
+function storageClickDetector(e) {
+    itemClickDetector(e, true)
+}
+
+function toggleStorageAccess(value) {
+    if (value == true) {
+        storageAccess = true
+        document.getElementById("storage-button").style.display = ""
+        document.getElementById("inventory-table").addEventListener("click", itemClickDetector)
+        document.getElementById("storage-table").addEventListener("click", storageClickDetector)
+    } else {
+        storageAccess = false
+        document.getElementById("storage-button").style.display = "none"
+        if (document.getElementById("sidebar-menu-storage").style.display != "none") {
+            document.getElementById("sidebar-menu-storage").style.display = "none"
+            document.getElementById("sidebar-menu-inventory").style.display = ""
+            document.getElementById("inventory-button").style.borderColor = "#7777cc"
+            document.getElementById("storage-button").style.borderColor = ""
+        }
+        document.getElementById("inventory-table").removeEventListener("click", itemClickDetector)
+        document.getElementById("storage-table").removeEventListener("click", storageClickDetector)
+    }
+}
+
+function getMaxWeight() {
+    return 5000
 }
 
 const sceneTicks = new Map([
@@ -485,6 +606,8 @@ setInterval(function() {
     if (combatData['enemy'] != null) {
         if (combatData['enemyHealth'] > 0) {
             let turnDmg = getBaseDamage(battleStats['str']) * (Math.random() * 0.4 + 0.8)
+            turnDmg = turnDmg * (1 + getSkillLevel("fighting") * 0.05)
+
             const turnDmgMitigation = damageMitigation(battleStats['str'], combatData['enemyStats']['def'])
             const turnHitChance = hitChance(battleStats['spd'], combatData['enemyStats']['dex'])
 
@@ -644,11 +767,16 @@ class scenes {
     }
 
     static home() {
-        return `You are in your home. You can rest here.\n\n{Sleep|sleep}\n\n{Leave|housingArea}`
+        return `You are in your home. You can rest here.\n\n{Sleep|sleep}\n{Storage|storage}\n\n{Leave|housingArea}`
     }
 
     static sleep() {
         return `You are currently sleeping. Time passes faster...\n\n{Get up|home}`
+    }
+
+    static storage() {
+        toggleStorageAccess(true)
+        return `You can access your storage from the sidebar. Click an item in your inventory to deposit it and click an item in your storage to withdraw it.\n\n{Leave|home|0|leaveStorage}`
     }
 
     static housingArea() {
@@ -711,6 +839,10 @@ class scenes {
 class sceneFunctions {
     static endFight() {
         endFight()
+    }
+
+    static leaveStorage() {
+        toggleStorageAccess(false)
     }
 }
 

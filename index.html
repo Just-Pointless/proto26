@@ -39,16 +39,25 @@
         <div id="menu-buttons-holder">
             <button class="menu-button" id="inventory-button" style="border-color: #7777cc;">Inventory</button>
             <button class="menu-button" id="skills-button">Skills</button>
+            <button class="menu-button" id="storage-button" style="display: none;">Storage</button>
         </div>
 
         <div class="sidebar-menu" id="sidebar-menu-inventory">
-            <div class="sidebar-menu-title">Inventory</div>
+            <div id="inventory-holder">
+                <div class="sidebar-menu-title">Inventory</div>
+                <div id="inventory-weight" data-tooltip-title="Weight" data-tooltip-text="This shows the current weight of items in your inventory and the limit you can carry without getting debuffs. Going above this limit will slow down your movement">0g / 5kg</div>
+            </div>
             <div id="inventory-table"></div>
         </div>
 
         <div class="sidebar-menu" id="sidebar-menu-skills" style="display: none;">
             <div class="sidebar-menu-title">Skills</div>
             <div id="skill-table"></div>
+        </div>
+
+        <div class="sidebar-menu" id="sidebar-menu-storage" style="display: none;">
+            <div class="sidebar-menu-title">Storage</div>
+            <div id="storage-table"></div>
         </div>
     </div>
     <div id="bottombar"></div>
