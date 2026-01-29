@@ -1,4 +1,4 @@
-const VERSION = "0.1"
+const VERSION = "0.1.1"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -40,7 +40,7 @@ var logAutoScroll = true
 var skills = {}
 var inventory = {}
 
-const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?}/g)
+const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
 const imageRegex = new RegExp(/!\\[(.*?)\\]/g)
 const enemyData = {
@@ -58,7 +58,8 @@ const enemyData = {
                 1: 35,
                 2: 5
             }}
-        ]
+        ],
+        "xp": [3, 5]
     }
 }
 const skillData = {
@@ -71,12 +72,18 @@ const skillData = {
         "name": "Fighting",
         "desc": "Slightly increases damage dealt",
         "scaling": 1.3
+    },
+    "training": {
+        "name": "Training",
+        "desc": "Increases stat gains from training",
+        "scaling": 1.3
     }
 }
 const itemData = {
     "straw": {
         "name": "Strand of Straw",
-        "desc": "A strand of straw that came from a training dummy"
+        "desc": "A strand of straw that came from a training dummy",
+        "weight": 0.5
     }
 }
 
@@ -258,13 +265,18 @@ function endFight() {
 }
 
 function killEnemy() {
+    insertLog(colorGen("#aaaaaa", `${enemyData[combatData['enemy']]['name']} died`))
+
     if (enemyData[combatData['enemy']]['loot'] != undefined) {
         for (const drop of enemyData[combatData['enemy']]['loot']) {
             changeInventory(drop['item'], getRandomLoot(drop['chances']))
         }
     }
 
-    insertLog(colorGen("#aaaaaa", `${enemyData[combatData['enemy']]['name']} died`))
+    if (enemyData[combatData['enemy']]['xp'] != undefined) {
+        let xpGain = Math.round(randomRange(enemyData[combatData['enemy']]['xp'][0], enemyData[combatData['enemy']]['xp'][1]))
+        increaseXp(xpGain)
+    }
 
     endFight()
 }
@@ -277,11 +289,9 @@ function getBaseDamage(strength) {
 function damageMitigation(strength, defense) {
     const ratio = defense / strength
 
-    if (ratio >= 14) return 1
-    if (ratio >= 1 && ratio < 14)
-        return (50 + (50 / Math.log(14)) * Math.log(ratio)) / 100
-    if (ratio > 1 / 32 && ratio < 1)
-        return (50 + (50 / Math.log(32)) * Math.log(ratio)) / 100
+    if (ratio >= 14) {return 1}
+    if (ratio >= 1 && ratio < 14) {return (50 + (50 / Math.log(14)) * Math.log(ratio)) / 100}
+    if (ratio > 1 / 32 && ratio < 1) {return (50 + (50 / Math.log(32)) * Math.log(ratio)) / 100}
 
     return 0
 }
@@ -289,17 +299,17 @@ function damageMitigation(strength, defense) {
 function hitChance(speed, dex) {
     const ratio = speed / dex
 
-    if (ratio > 64) return 100
-    if (ratio >= 1 && ratio < 64)
-        return 100 - (50 / 7) * (8 * Math.sqrt(1 / ratio) - 1)
-    if (ratio > 1 / 64 && ratio < 1)
-        return (50 / 7) * (8 * Math.sqrt(ratio) - 1)
+    if (ratio > 64) {return 100}
+    if (ratio >= 1 && ratio < 64) {return 100 - (50 / 7) * (8 * Math.sqrt(1 / ratio) - 1)}
+    if (ratio > 1 / 64 && ratio < 1) {return (50 / 7) * (8 * Math.sqrt(ratio) - 1)}
 
     return 0
 }
 
 function increaseSkill(skill, skillXp) {
-    let scaling = skillData[skill]['scaling']
+    const scaling = skillData[skill]['scaling']
+    const currentLevel = xpToLevel(skills[skill] || 0, false, scaling)
+
     if (skills[skill] == undefined) {
         skills[skill] = skillXp
         const skillbarParent = document.createElement("div")
@@ -327,6 +337,10 @@ function increaseSkill(skill, skillXp) {
         const skillbarText = document.getElementById(`skill-${skill}`).getElementsByClassName("skillbar-text")[0]
         skillbarText.textContent = `${skillData[skill]['name']} ${xpToLevel(skills[skill], false, scaling)}: ${Math.round(xpIntoLevel(skills[skill], scaling))}/${Math.round(xpForLevel(xpToLevel(skills[skill], false, scaling), scaling))}`
     }
+
+    if (currentLevel < xpToLevel(skills[skill], false, scaling)) {
+        insertLog(colorGen("#bbbb44", `${skillData[skill]['name']} increased to to ${xpToLevel(skills[skill], false, scaling)}`))
+    }
 }
 
 function formatNumber(num) {
@@ -344,8 +358,8 @@ function formatNumber(num) {
     return value.toFixed(decimals).replace(/\.0+$/, "") + units[exp - 1]
 }
 
-function calcSpeed() {
-    return 50
+function getMovementSpeed() {
+    return 50 + getSkillLevel("walking") * 3
 }
 
 function getRandomLoot(weightedDict) {
@@ -399,18 +413,41 @@ function changeInventory(item, amount) {
     }
 }
 
+function increaseXp(amount) {
+    const currentLevel = xpToLevel(xp)
+    xp += amount
+    updateBar("xp")
+    updateLevelText()
+    insertLog(colorGen("#6666ff", `+${amount} XP`))
+    if (currentLevel < xpToLevel(xp)) {
+        insertLog(colorGen("#88ccff", `Levelled up to ${xpToLevel(xp)}`))
+    }
+}
+
+function getSkillLevel(skill) {
+    if (skills[skill] == undefined) {
+        return 0
+    } else {
+        return xpToLevel(skills[skill], false, skillData[skill]['scaling'])
+    }
+}
+
 const sceneTicks = new Map([
     ['trainingGrounds_str', function() {
-        battleStats['str'] += 0.01
+        battleStats['str'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
+        increaseSkill("training", 1)
     }],
     ['trainingGrounds_def', function() {
-        battleStats['def'] += 0.01
+        battleStats['def'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
+        increaseSkill("training", 1)
     }],
     ['trainingGrounds_spd', function() {
-        battleStats['spd'] += 0.01
+        battleStats['spd'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
+        increaseSkill("training", 1)
     }],
     ['trainingGrounds_dex', function() {
-        battleStats['dex'] += 0.01
+        battleStats['dex'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
+        increaseSkill("training", 1)
     }],
     ['dojo_trainingDummy', function() {
         if (combatData['enemy'] == null) {
@@ -433,7 +470,8 @@ setInterval(function() {
         //     travelInfo['destination'] = null
         //     travelInfo['arrival'] = [0, 0]
         // }
-        travelInfo['completed'] += calcSpeed()
+        travelInfo['completed'] += getMovementSpeed()
+        increaseSkill("walking", 1)
         if (travelInfo['completed'] >= travelInfo['distance']) {
             sceneManager(travelInfo['destination'])
             playTransition()
@@ -454,9 +492,10 @@ setInterval(function() {
 
             insertLog(`You -> ${colorGen("#ff3333", turnActualDmg)}`)
             combatData['enemyHealth'] -= turnActualDmg
+            increaseSkill("fighting", 1)
 
             updateBar("enemyHealth")
-            if (combatData['enemyHealth'] < 0) {
+            if (combatData['enemyHealth'] <= 0) {
                 killEnemy()
             }
         } else {
@@ -665,7 +704,13 @@ class scenes {
         if (combatData['enemyHealth'] <= 0) {
             generateEnemy("strawDummy")
         }
-        return `You are practicing fighting against training dummies.`
+        return `You are practicing fighting against training dummies.\n\n{Stop|dojo|0|endFight}`
+    }
+}
+
+class sceneFunctions {
+    static endFight() {
+        endFight()
     }
 }
 
@@ -706,15 +751,13 @@ function processText(text) {
             button.className = "main-link"
             button.id = "button" + num
             button.addEventListener("click", function() {
-                // Old logic from my other game, may be used later
-                // if (splitLinks[num][4]) {
-                //     let params = splitLinks[num][5] ? (splitLinks[num][5].includes(",") ? splitLinks[num][5].split(",") : splitLinks[num][5]) : undefined
-                //     SceneFunctions[splitLinks[num][4]](params)
-                // }
-                if (splitLinks[num][3] == undefined) {
+                if (splitLinks[num][3] == undefined || splitLinks[num][3] == 0) {
+                    if (splitLinks[num][4] != undefined) {
+                        sceneFunctions[splitLinks[num][4]]()
+                    }
                     sceneManager(splitLinks[num][2])
                 } else {
-                    let arrival = getFuture(time, day, Number(splitLinks[num][3]) / calcSpeed())
+                    let arrival = getFuture(time, day, Number(splitLinks[num][3]) / getMovementSpeed())
                     processText(`You are walking towards the ${splitLinks[num][1]}. You'll arrive at ${colorGen("#CCCCFF", formatTime(arrival[0], arrival[1], true))}`)
                     travelInfo['destination'] = splitLinks[num][2]
                     travelInfo['distance'] = Number(splitLinks[num][3])

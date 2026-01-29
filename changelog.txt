@@ -1,2 +1,13 @@
+v0.1.1
+- Fix code inconsistencies
+- Addded training skill
+- Implement scene functions
+- Implement fighting skill
+- Fix death check
+- Implement xp gain
+- Add level up logs
+- Allow for leaving dojo training
+- Implement walking skill
+
 v0.1
 - Base game mechanics and systems
