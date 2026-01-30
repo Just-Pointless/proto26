@@ -1,3 +1,11 @@
+v0.3
+- Implement energy system
+- Replace some accidental single quotes with double quotes
+- Add status effect system
+- Add low energy debuffs
+- Show stat debuff
+- Change player info to use absolute width
+
 v0.2
 - Implement storage system
 - Implement weight system

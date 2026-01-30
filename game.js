@@ -1,4 +1,4 @@
-const VERSION = "0.2"
+const VERSION = "0.3"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -41,6 +41,9 @@ var inventory = {}
 var storage = {}
 var storageAccess = false
 var inventoryWeight = 0
+var energy = 100
+var noSleepTime = 0
+var effects = {}
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -86,6 +89,13 @@ const itemData = {
         "name": "Strand of Straw",
         "desc": "A strand of straw that came from a training dummy",
         "weight": 0.5
+    }
+}
+const effectData = {
+    "sleepDeprived": {
+        "name": "Sleep Deprived",
+        "desc": "Due to a lack of sleep, your energy loss per minute has increased",
+        "color": "#006666"
     }
 }
 
@@ -143,6 +153,9 @@ function updateBar(bar) {
     if (bar == "health") {
         document.getElementById("healthbar-text").textContent = `HP: ${health}/${calcMaxHp(xpToLevel(xp))}`
         document.getElementById("healthbar-fill").style.width = `${health / calcMaxHp(xpToLevel(xp)) * 100}%`
+    } else if (bar == "energy") {
+        document.getElementById("energy-bar-text").textContent = `Energy: ${Math.round(energy)}/100`
+        document.getElementById("energy-bar-fill").style.width = `${energy / 100 * 100}%`
     } else if (bar == "xp") {
         document.getElementById("xp-bar-text").textContent = `XP: ${Math.round(xpIntoLevel(xp))}/${Math.round(xpForLevel(xpToLevel(xp)))}`
         document.getElementById("xp-bar-fill").style.width = `${xpIntoLevel(xp) / xpForLevel(xpToLevel(xp)) * 100}%`
@@ -154,10 +167,11 @@ function updateBar(bar) {
 }
 
 function updateStats() {
-    document.getElementById("stat-str").textContent = `Str: ${formatNumber(battleStats['str'])}`
-    document.getElementById("stat-def").textContent = `Def: ${formatNumber(battleStats['def'])}`
-    document.getElementById("stat-spd").textContent = `Spd: ${formatNumber(battleStats['spd'])}`
-    document.getElementById("stat-dex").textContent = `Dex: ${formatNumber(battleStats['dex'])}`
+    for (const [stat, value] of Object.entries(battleStats)) {
+        const effectiveStat = value * calcEnergyDebuff()
+        const debuffPercentage = effectiveStat / value * 100 - 100
+        document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
+    }
 }
 
 function colorGen(hex, text) {
@@ -372,7 +386,7 @@ function getMovementSpeed() {
     if (inventoryWeight > 0) {
         inventoryMulti = Math.min(getMaxWeight() / inventoryWeight, 1)
     }
-    return (50 + getSkillLevel("walking") * 3) * inventoryMulti
+    return (50 + getSkillLevel("walking") * 3) * inventoryMulti * calcEnergyDebuff()
 }
 
 function getRandomLoot(weightedDict) {
@@ -553,36 +567,97 @@ function getMaxWeight() {
     return 5000
 }
 
-const sceneTicks = new Map([
-    ['trainingGrounds_str', function() {
-        battleStats['str'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
-        increaseSkill("training", 1)
-    }],
-    ['trainingGrounds_def', function() {
-        battleStats['def'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
-        increaseSkill("training", 1)
-    }],
-    ['trainingGrounds_spd', function() {
-        battleStats['spd'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
-        increaseSkill("training", 1)
-    }],
-    ['trainingGrounds_dex', function() {
-        battleStats['dex'] += 0.01 * (1 + getSkillLevel("training") * 0.02)
-        increaseSkill("training", 1)
-    }],
-    ['dojo_trainingDummy', function() {
-        if (combatData['enemy'] == null) {
-            generateEnemy("strawDummy")
-        }
-    }]
-])
+function changeEnergy(amount) {
+    let oldenergy = energy
+    energy = Math.min(Math.max(energy + amount, 0), 100)
+    if (amount < 0 && oldenergy > 35 && energy < 35) {
+        insertLog(colorGen("#aaaaaa", "You start to feel tired"))
+    }
+    updateBar("energy")
+}
 
-setInterval(function() {
-    time += currentScene != "sleep" ? 1 : 10
+function changeTime(amount) {
+    time += amount
+    if (currentScene != "sleep") {
+        noSleepTime = Math.min(noSleepTime + amount, 1440)
+    }
     if (time >= 1440) {
         time -= 1440
         day += 1
     }
+}
+
+function changeEffect(effect, enable=true) {
+    if (enable == true) {
+        if (effects[effect] == undefined) {
+            effects[effect] = true
+            const div = document.createElement("div")
+            div.className = "effect-icon"
+            div.id = `effect-${effect}`
+            div.style.backgroundColor = effectData[effect]['color']
+            div.setAttribute("data-tooltip-title", effectData[effect]['name'])
+            div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
+
+            document.getElementById("effects-bar").appendChild(div)
+        }
+    } else {
+        if (effects[effect] != undefined) {
+            delete effects[effect]
+            if (document.getElementById(`effect-${effect}`)) {
+                document.getElementById(`effect-${effect}`).remove()
+            }
+        }
+    }
+}
+
+function calcEnergyDebuff() {
+    if (energy >= 35) {
+        return 1
+    } else {
+        return energy / 70 + 0.5
+    }
+}
+
+const sceneTicks = new Map([
+    ["trainingGrounds_str", function() {
+        battleStats['str'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
+        increaseSkill("training", 1)
+        changeEnergy(-0.1)
+    }],
+    ["trainingGrounds_def", function() {
+        battleStats['def'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
+        increaseSkill("training", 1)
+        changeEnergy(-0.1)
+    }],
+    ["trainingGrounds_spd", function() {
+        battleStats['spd'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
+        increaseSkill("training", 1)
+        changeEnergy(-0.1)
+    }],
+    ["trainingGrounds_dex", function() {
+        battleStats['dex'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
+        increaseSkill("training", 1)
+        changeEnergy(-0.1)
+    }],
+    ["dojo_trainingDummy", function() {
+        if (combatData['enemy'] == null) {
+            generateEnemy("strawDummy")
+        }
+    }],
+    ["sleep", function() {
+        changeEnergy(2.05)
+        noSleepTime = Math.max(noSleepTime - 40, 0)
+    }]
+])
+
+const effectFunctions = new Map([
+    ["sleepDeprived", function() {
+        changeEnergy(-0.1)
+    }]
+])
+
+setInterval(function() {
+    changeTime(currentScene != "sleep" ? 1 : 10)
 
     if (travelInfo['destination'] != null) {
         // if ((travelInfo['arrival'][0] <= time && travelInfo['arrival'][1] <= day) || travelInfo['arrival'][1] < day) {
@@ -605,11 +680,15 @@ setInterval(function() {
     // Combat
     if (combatData['enemy'] != null) {
         if (combatData['enemyHealth'] > 0) {
-            let turnDmg = getBaseDamage(battleStats['str']) * (Math.random() * 0.4 + 0.8)
+            const effectiveStats = {}
+            for (const [stat, value] of Object.entries(battleStats)) {
+                effectiveStats[stat] = value * calcEnergyDebuff()
+            }
+            let turnDmg = getBaseDamage(effectiveStats['str']) * (Math.random() * 0.4 + 0.8)
             turnDmg = turnDmg * (1 + getSkillLevel("fighting") * 0.05)
 
-            const turnDmgMitigation = damageMitigation(battleStats['str'], combatData['enemyStats']['def'])
-            const turnHitChance = hitChance(battleStats['spd'], combatData['enemyStats']['dex'])
+            const turnDmgMitigation = damageMitigation(effectiveStats['str'], combatData['enemyStats']['def'])
+            const turnHitChance = hitChance(effectiveStats['spd'], combatData['enemyStats']['dex'])
 
             const turnActualDmg = Math.round(turnDmg * (1 - turnDmgMitigation))
 
@@ -626,9 +705,24 @@ setInterval(function() {
         }
     }
 
+    changeEnergy(-0.05)
+
+    if (noSleepTime >= 1200) {
+        changeEffect("sleepDeprived")
+    } else {
+        changeEffect("sleepDeprived", false)
+    }
+
     const handler = sceneTicks.get(currentScene)
     if (handler) {handler()}
+
+    for (const effect in effects) {
+        const handler = effectFunctions.get(effect)
+        if (handler) {handler()}
+    }
+
     updateBar("health")
+    // updateBar("energy") No longer needed as changeenergy function updates it
     updateBar("xp")
     updateStats()
 

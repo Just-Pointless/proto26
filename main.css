@@ -175,7 +175,7 @@ body {
     position: fixed;
     top: 0;
     bottom: calc(80% + 5px);
-    width: calc(10% + 300px);
+    width: 500px;
     color: #ffffff;
     font-size: 16px;
     line-height: 20px;
@@ -206,8 +206,24 @@ body {
     background-color: #44bb44;
 }
 
+#energy-bar-fill {
+    background-color: #bb4444;
+}
+
 #xp-bar-fill {
     background-color: #4444bb;
+}
+
+#effects-bar {
+    position: absolute;
+    bottom: 5px;
+    width: 100%;
+    height: 16px;
+}
+
+.effect-icon {
+    width: 16px;
+    height: 16px;
 }
 
 #player-info-divider {
@@ -243,7 +259,7 @@ body {
     position: fixed;
     top: 0;
     bottom: calc(80% + 5px);
-    left: calc(10% + 305px);
+    left: 505px;
     right: 305px;
     color: #ffffff;
     font-size: 16px;
