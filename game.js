@@ -1,4 +1,4 @@
-const VERSION = "0.3"
+const VERSION = "0.4"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -44,6 +44,14 @@ var inventoryWeight = 0
 var energy = 100
 var noSleepTime = 0
 var effects = {}
+var quests = {}
+var completedQuests = []
+var stats = {
+    "playtime": 0,
+    "gametime": 0,
+    "kills": {},
+    "timeSlept": 0
+}
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -56,7 +64,6 @@ const enemyData = {
         "def": [2.5, 3],
         "spd": 0,
         "dex": 0,
-        "properties": ["noAttack"],
         "loot": [
             {"item": "straw", "chances": {
                 0: 60,
@@ -65,6 +72,15 @@ const enemyData = {
             }}
         ],
         "xp": [3, 5]
+    },
+    "mouse": {
+        "name": "Mouse",
+        "health": [12, 18],
+        "str": [0.15, 0.2],
+        "def": [0.2, 0.3],
+        "spd": [1.5, 2],
+        "dex": [1.5, 2],
+        "xp": [5, 7]
     }
 }
 const skillData = {
@@ -96,6 +112,65 @@ const effectData = {
         "name": "Sleep Deprived",
         "desc": "Due to a lack of sleep, your energy loss per minute has increased",
         "color": "#006666"
+    }
+}
+const questData = {
+    "dojoIntro1": {
+        "name": "Dojo Introduction 1",
+        "desc": "You have been tasked by the instructor to defeat a total of 5 straw dummies and reach 1.5 strength",
+        "repeatable": false,
+        "goals": {
+            "kills": {
+                "strawDummy": {
+                    "amount": 5,
+                    "lifetime": false
+                }
+            },
+            "stats": {
+                "str": {
+                    "amount": 1.5,
+                    "lifetime": true
+                }
+            }
+        }
+    },
+    "dojoIntro2": {
+        "name": "Dojo Introduction 2",
+        "desc": "You have been tasked by the instructor to reach 1.5 in every stat",
+        "repeatable": false,
+        "goals": {
+            "stats": {
+                "str": {
+                    "amount": 1.5,
+                    "lifetime": true
+                },
+                "def": {
+                    "amount": 1.5,
+                    "lifetime": true
+                },
+                "spd": {
+                    "amount": 1.5,
+                    "lifetime": true
+                },
+                "dex": {
+                    "amount": 1.5,
+                    "lifetime": true
+                }
+            }
+        }
+    },
+    "dojoIntro3": {
+        "name": "Pest Control",
+        "desc": "You have been tasked by the instructor to defeat 10 mice in the alleys",
+        "repeatable": false,
+        "goals": {
+            "kills": {
+                "mouse": {
+                    "amount": 10,
+                    "lifetime": false
+                }
+            },
+        }
     }
 }
 
@@ -141,7 +216,7 @@ function xpIntoLevel(xp, r = 1.1) {
     return Math.max(0, xp - levelStartXp)
 }
 
-function calcMaxHp(level) {
+function calcMaxHp(level=xpToLevel(xp)) {
     return Math.round(2 * level ** 1.5 + level + 10)
 }
 
@@ -151,8 +226,8 @@ function updateLevelText(xp) {
 
 function updateBar(bar) {
     if (bar == "health") {
-        document.getElementById("healthbar-text").textContent = `HP: ${health}/${calcMaxHp(xpToLevel(xp))}`
-        document.getElementById("healthbar-fill").style.width = `${health / calcMaxHp(xpToLevel(xp)) * 100}%`
+        document.getElementById("healthbar-text").textContent = `HP: ${health}/${calcMaxHp()}`
+        document.getElementById("healthbar-fill").style.width = `${health / calcMaxHp() * 100}%`
     } else if (bar == "energy") {
         document.getElementById("energy-bar-text").textContent = `Energy: ${Math.round(energy)}/100`
         document.getElementById("energy-bar-fill").style.width = `${energy / 100 * 100}%`
@@ -166,11 +241,13 @@ function updateBar(bar) {
     }
 }
 
-function updateStats() {
+function updateBattlestats(statName=null) {
     for (const [stat, value] of Object.entries(battleStats)) {
-        const effectiveStat = value * calcEnergyDebuff()
-        const debuffPercentage = effectiveStat / value * 100 - 100
-        document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
+        if (statName == null || stat == statName) {
+            const effectiveStat = value * calcEnergyDebuff()
+            const debuffPercentage = effectiveStat / value * 100 - 100
+            document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
+        }
     }
 }
 
@@ -294,8 +371,16 @@ function killEnemy() {
 
     if (enemyData[combatData['enemy']]['xp'] != undefined) {
         let xpGain = Math.round(randomRange(enemyData[combatData['enemy']]['xp'][0], enemyData[combatData['enemy']]['xp'][1]))
-        increaseXp(xpGain)
+        changeXp(xpGain)
     }
+
+    if (combatData['enemy'] == "strawDummy" && checks['firstDummy'] != true) {
+        playTransition()
+        sceneManager("dojoQuestIntro")
+    }
+
+    changeQuestProgress("kills", combatData['enemy'], 1)
+    stats['kills'][combatData['enemy']] = (stats['kills'][combatData['enemy']] ?? 0) + 1
 
     endFight()
 }
@@ -305,7 +390,7 @@ function getBaseDamage(strength) {
     return 7 * x ** 2 + x * 2 + 5
 }
 
-function damageMitigation(strength, defense) {
+function calcDamageMitigation(strength, defense) {
     const ratio = defense / strength
 
     if (ratio >= 14) {return 1}
@@ -315,8 +400,8 @@ function damageMitigation(strength, defense) {
     return 0
 }
 
-function hitChance(speed, dex) {
-    const ratio = speed / dex
+function calcHitChance(speed, dexterity) {
+    const ratio = speed / dexterity
 
     if (ratio > 64) {return 100}
     if (ratio >= 1 && ratio < 64) {return 100 - (50 / 7) * (8 * Math.sqrt(1 / ratio) - 1)}
@@ -325,7 +410,7 @@ function hitChance(speed, dex) {
     return 0
 }
 
-function increaseSkill(skill, skillXp) {
+function changeSkill(skill, skillXp) {
     const scaling = skillData[skill]['scaling']
     const currentLevel = xpToLevel(skills[skill] || 0, false, scaling)
 
@@ -491,14 +576,14 @@ function changeStorage(item, amount) {
     }
 }
 
-function increaseXp(amount) {
+function changeXp(amount) {
     const currentLevel = xpToLevel(xp)
     xp += amount
     updateBar("xp")
     updateLevelText(xp)
     insertLog(colorGen("#6666ff", `+${amount} XP`))
     if (currentLevel < xpToLevel(xp)) {
-        health += calcMaxHp(xpToLevel(xp)) - calcMaxHp(currentLevel)
+        changeHp(calcMaxHp() - calcMaxHp(currentLevel))
         updateBar("health")
         insertLog(colorGen("#88ccff", `Levelled up to ${xpToLevel(xp)}`))
     }
@@ -578,8 +663,11 @@ function changeEnergy(amount) {
 
 function changeTime(amount) {
     time += amount
+    stats['gametime'] += amount
     if (currentScene != "sleep") {
         noSleepTime = Math.min(noSleepTime + amount, 1440)
+    } else {
+        stats['timeSlept'] += amount
     }
     if (time >= 1440) {
         time -= 1440
@@ -618,26 +706,199 @@ function calcEnergyDebuff() {
     }
 }
 
+function changeHp(amount) {
+    health = Math.min(Math.max(health + amount, 0), calcMaxHp())
+
+    if (health <= 0) {
+        endFight()
+        playTransition()
+        sceneManager("sleep")
+        insertLog(colorGen("#ff0000", "You died!"))
+        health = 1
+        insertLog(colorGen("#bb4444", `${(-energy / 2).toFixed(0)} Energy`))
+        changeEnergy(-energy / 2)
+    }
+
+    updateBar("health")
+}
+
+function getQuestGoals(questName) {
+    let output = {}
+    for (const [type, values] of Object.entries(questData[questName]['goals'])) {
+        for (const [stat, data] of Object.entries(values)) {
+            if (output[type] == undefined) {
+                output[type] = {}
+            }
+            if (data['lifetime'] == true) {
+                let statValue
+                if (type == "stats") {
+                    statValue = battleStats[stat]
+                }
+
+                output[type][stat] = {
+                    "amount": data['amount'],
+                    "completion": statValue
+                }
+            } else if (data['lifetime'] == false) {
+                let statValue
+                if (!quests[questName]) {
+                    statValue = 0
+                } else {
+                    statValue = quests[questName]['goals'][type][stat]['completion']
+                }
+
+                output[type][stat] = {
+                    "amount": data['amount'],
+                    "completion": statValue
+                }
+            }
+        }
+    }
+    return output
+}
+
+function checkCompletion(questName) {
+    if (quests[questName] == undefined) {
+        return false
+    }
+    let goals = getQuestGoals(questName)
+    for (const [type, values] of Object.entries(goals)) {
+        for (const [stat, data] of Object.entries(values)) {
+            if (data['amount'] > data['completion']) {
+                return false
+            }
+        }
+    }
+
+    delete quests[questName]
+    insertLog(`Completed Quest: ${colorGen("#ffff00", `"${questData[questName]['name']}"`)}`)
+    if (questData[questName]['repeatable'] == false) {
+        completedQuests.push(questName)
+    }
+    document.getElementById(`quest-${questName}`).remove()
+}
+
+function giveQuest(questName) {
+    if (!quests[questName]) {
+        nonLifetime = {}
+        for (const [type, values] of Object.entries(questData[questName]['goals'])) {
+            for (const [stat, data] of Object.entries(values)) {
+                if (data['lifetime'] == false) {
+                    if (nonLifetime[type] == undefined) {
+                        nonLifetime[type] = {}
+                    }
+                    nonLifetime[type][stat] = {
+                        "amount": data['amount'],
+                        "completion": 0
+                    }
+                }
+            }
+        }
+        quests[questName] = {
+            "goals": nonLifetime
+        }
+        insertLog(`Received Quest: ${colorGen("#ffff00", `"${questData[questName]['name']}"`)}`)
+        if (document.getElementById("quests-button").style.display == "none") {
+            document.getElementById("quests-button").style.display = ""
+        }
+        const questParent = document.createElement("div")
+        questParent.className = "quest-parent"
+        questParent.id = `quest-${questName}`
+
+        const questTitle = document.createElement("div")
+        questTitle.className = "quest-title"
+        questTitle.textContent = questData[questName]['name']
+
+        const questDesc = document.createElement("div")
+        questDesc.className = "quest-desc"
+        questDesc.textContent = questData[questName]['desc']
+
+        const questGoals = document.createElement("div")
+        questGoals.className = "quest-goals"
+        
+        for (const [type, values] of Object.entries(getQuestGoals(questName))) {
+            for (const [stat, data] of Object.entries(values)) {
+                const goalParent = document.createElement("div")
+                goalParent.className = "goal-parent"
+
+                const goal = document.createElement("span")
+                goal.className = "quest-goal"
+                if (type == "kills") {
+                    goal.textContent = `${enemyData[stat]['name']}: `
+                } else if (type == "stats") {
+                    goal.textContent = `${stat.replace("str", "Strength").replace("def", "Defense").replace("spd", "Speed").replace("dex", "Dexterity")}: ` // Kinda bad but it works for now
+                } else {
+                    goal.textContent = `${stat}: `
+                }
+
+                const goalProgress = document.createElement("span")
+                goalProgress.className = "quest-goal-progress"
+                goalProgress.style.color = data['completion'] < data['amount'] ? "#ff0000" : "#00ff00"
+                goalProgress.id = `quest-${questName}-${stat}`
+                goalProgress.textContent = `${formatNumber(data['completion'])}/${data['amount']}`
+                
+                questGoals.appendChild(goalParent)
+                goalParent.appendChild(goal)
+                goalParent.appendChild(goalProgress)
+            }
+        }
+        
+        questParent.appendChild(questTitle)
+        questParent.appendChild(questDesc)
+        questParent.appendChild(questGoals)
+        document.getElementById("quests-table").appendChild(questParent)
+
+        checkCompletion(questName)
+    }
+}
+
+function changeQuestProgress(type, stat, value) {
+    for (const quest in quests) {
+        const questStatData = questData[quest]['goals']?.[type]?.[stat]
+        if (questStatData) {
+            let newValue
+            if (questStatData['lifetime'] == true) {
+                newValue = value
+            } else {
+                newValue = quests[quest]['goals'][type][stat]['completion'] + value
+                quests[quest]['goals'][type][stat]['completion'] = newValue
+            }
+            const goalElem = document.getElementById(`quest-${quest}-${stat}`)
+            goalElem.textContent = `${formatNumber(newValue)}/${questStatData['amount']}`
+            if (newValue >= questStatData['amount']) {
+                goalElem.style.color = "#00ff00"
+                checkCompletion(quest)
+            }
+        }
+    }
+}
+
+function changeBattlestat(stat, amount) {
+    battleStats[stat] += amount
+    updateBattlestats(stat)
+    changeQuestProgress("stats", stat, battleStats[stat])
+}
+
 const sceneTicks = new Map([
     ["trainingGrounds_str", function() {
-        battleStats['str'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
-        increaseSkill("training", 1)
-        changeEnergy(-0.1)
+        changeBattlestat("str", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
     }],
     ["trainingGrounds_def", function() {
-        battleStats['def'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
-        increaseSkill("training", 1)
-        changeEnergy(-0.1)
+        changeBattlestat("def", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
     }],
     ["trainingGrounds_spd", function() {
-        battleStats['spd'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
-        increaseSkill("training", 1)
-        changeEnergy(-0.1)
+        changeBattlestat("spd", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
     }],
     ["trainingGrounds_dex", function() {
-        battleStats['dex'] += 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff()
-        increaseSkill("training", 1)
-        changeEnergy(-0.1)
+        changeBattlestat("dex", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
     }],
     ["dojo_trainingDummy", function() {
         if (combatData['enemy'] == null) {
@@ -647,7 +908,18 @@ const sceneTicks = new Map([
     ["sleep", function() {
         changeEnergy(2.05)
         noSleepTime = Math.max(noSleepTime - 40, 0)
-    }]
+    }],
+    ["hospital", function() {
+        changeHp(2)
+    }],
+    ["alley", function() {
+        if (!quests['dojoIntro3'] && !completedQuests.includes("dojoIntro3")) {
+            return
+        }
+        if (combatData['enemy'] == null) {
+            generateEnemy("mouse")
+        }
+    }],
 ])
 
 const effectFunctions = new Map([
@@ -657,6 +929,7 @@ const effectFunctions = new Map([
 ])
 
 setInterval(function() {
+    stats['playtime'] += 1
     changeTime(currentScene != "sleep" ? 1 : 10)
 
     if (travelInfo['destination'] != null) {
@@ -667,7 +940,7 @@ setInterval(function() {
         //     travelInfo['arrival'] = [0, 0]
         // }
         travelInfo['completed'] += getMovementSpeed()
-        increaseSkill("walking", 1)
+        changeSkill("walking", 1)
         if (travelInfo['completed'] >= travelInfo['distance']) {
             sceneManager(travelInfo['destination'])
             playTransition()
@@ -684,21 +957,43 @@ setInterval(function() {
             for (const [stat, value] of Object.entries(battleStats)) {
                 effectiveStats[stat] = value * calcEnergyDebuff()
             }
+            const enemyStats = combatData['enemyStats']
+
             let turnDmg = getBaseDamage(effectiveStats['str']) * (Math.random() * 0.4 + 0.8)
             turnDmg = turnDmg * (1 + getSkillLevel("fighting") * 0.05)
 
-            const turnDmgMitigation = damageMitigation(effectiveStats['str'], combatData['enemyStats']['def'])
-            const turnHitChance = hitChance(effectiveStats['spd'], combatData['enemyStats']['dex'])
-
+            const turnDmgMitigation = calcDamageMitigation(effectiveStats['str'], enemyStats['def'])
+            const turnHitChance = calcHitChance(effectiveStats['spd'], enemyStats['dex'])
+            
             const turnActualDmg = Math.round(turnDmg * (1 - turnDmgMitigation))
+            if (turnHitChance / 100 > Math.random()) {
+                insertLog(`You -> ${colorGen("#ff3333", turnActualDmg)}`)
+                combatData['enemyHealth'] -= turnActualDmg
+            } else {
+                insertLog(colorGen("#aaaaaa", "You missed"))
+            }
+            changeSkill("fighting", 1)
 
-            insertLog(`You -> ${colorGen("#ff3333", turnActualDmg)}`)
-            combatData['enemyHealth'] -= turnActualDmg
-            increaseSkill("fighting", 1)
-
-            updateBar("enemyHealth")
             if (combatData['enemyHealth'] <= 0) {
                 killEnemy()
+            } else {
+                if (enemyStats['str'] > 0 && enemyStats['spd'] > 0) {
+                    let turnDmg = getBaseDamage(enemyStats['str']) * (Math.random() * 0.4 + 0.8)
+
+                    const turnDmgMitigation = calcDamageMitigation(enemyStats['str'], effectiveStats['def'])
+                    const turnHitChance = calcHitChance(enemyStats['spd'], effectiveStats['dex'])
+                    
+                    const turnActualDmg = Math.round(turnDmg * (1 - turnDmgMitigation))
+
+                    if (turnHitChance / 100 > Math.random()) {
+                        insertLog(`${enemyData[combatData['enemy']]['name']} -> ${colorGen("#ff3333", turnActualDmg)}`)
+                        changeHp(-turnActualDmg)
+                    } else {
+                        insertLog(colorGen("#aaaaaa", `${enemyData[combatData['enemy']]['name']} missed`))
+                    }
+                }
+
+                updateBar("enemyHealth")
             }
         } else {
             killEnemy()
@@ -721,10 +1016,10 @@ setInterval(function() {
         if (handler) {handler()}
     }
 
-    updateBar("health")
+    // updateBar("health") No longer needed as changehp function updates it
     // updateBar("energy") No longer needed as changeenergy function updates it
-    updateBar("xp")
-    updateStats()
+    // updateBar("xp") No longer needed as changexp function updates it
+    // updateStats() No longer needed as changestat function updates it
 
     document.getElementById("center-top").textContent = formatTime(time, day)
 }, 1000)
@@ -878,7 +1173,7 @@ class scenes {
     }
 
     static townCenter() {
-        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Housing Area|housingArea|250}`
+        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Hospital|hospital}\n\n{Alley|alley}\n\n{Housing Area|housingArea|250}`
     }
 
     static noticeBoard() {
@@ -916,17 +1211,66 @@ class scenes {
     static dojo() {
         if (checks['dojo'] == undefined) {
             checks['dojo'] = true
-            return `As you walk into the dojo, a man greets you.\n\n"Welcome to the dojo. This is the main place in town where fighters of all classes come to train their fighting skills."\n\n{Next|dojo}`
+            return `As you walk into the dojo, an old man greets you.\n\n"Welcome to the dojo. This is the main place in town where fighters of all classes come to train their fighting skills."\n\n{Next|dojo}`
         } else {
-            return `You are in the dojo.\n\n{Practice fighting a training dummy|dojo_trainingDummy}\n\n{Leave|townCenter}`
+            // if (completedQuests.includes("dojoIntro1") && !checks['dojoIntro1Talked']) {r += `{Dojo Instructor|dojoInstructor}\n`}
+            return `You are in the dojo.\n\n{Dojo Instructor|dojoInstructor}\n{Practice fighting a training dummy|dojo_trainingDummy}\n\n{Leave|townCenter}`
         }
     }
 
     static dojo_trainingDummy() {
-        if (combatData['enemyHealth'] <= 0) {
-            generateEnemy("strawDummy")
-        }
+        generateEnemy("strawDummy")
         return `You are practicing fighting against training dummies.\n\n{Stop|dojo|0|endFight}`
+    }
+
+    static dojoQuestIntro() {
+        checks['firstDummy'] = true
+        return `As you defeat your first training dummy, the instructor walks towards you.\n\n"You're not from around here are you? You seem like you're from another world but I can see potential."\n\n{Next|dojoQuestIntro2}`
+    }
+
+    static dojoQuestIntro2() {
+        giveQuest("dojoIntro1")
+        if (battleStats['str'] < 1.5) {
+            return `"I'm willing to guide you in order to become stronger. But first, you need to reach the goal of 1.5 strength and destroy 5 straw dummies. Come talk to me again once you're done."\n\n{Return|dojo}`
+        } else {
+            return `"I'm willing to guide you in order to become stronger. But first, you need to destroy 5 straw dummies. Come talk to me again once you're done."\n\n{Return|dojo}`
+        }
+    }
+
+    static dojoInstructor() {
+        return `"Need something?"\n\n{Quest Completion|dojoInstructorQuest}\n\n{Return|dojo}`
+    }
+
+    static dojoInstructorQuest() {
+        if (completedQuests.includes("dojoIntro1") && !checks['dojoIntro1Talked']) {
+            checks['dojoIntro1Talked'] = true
+            giveQuest("dojoIntro2")
+            return `"Good job, you've proven that you're able to do some basic fighting. Unlike real enemies, these dummies don't fight back or move. For your next task: get all your battle stats to 1.5. Then I can give you some real enemies to fight."\n\n{Return|dojo}`
+        } else if (completedQuests.includes("dojoIntro2") && !checks['dojoIntro2Talked']) {
+            checks['dojoIntro2Talked'] = true
+            giveQuest("dojoIntro3")
+            return `"You now have some decent stats, still below the average human in this world but you should now be able do my next quest without issue. Your goal is to defeat 10 mice in the alleys. Visit the hospital if your health drops too low. If you struggle to defeat the mice, I suggest training a bit more."\n\n{Return|dojo}`
+        } else if (completedQuests.includes("dojoIntro3")) {
+            return `"Congratulations on completing all my quests. This is the end of my questline for now, you can still continue training and levelling up your skills. Good luck."\n\n{Return|dojo}`
+        }
+        return `"You don't seem to have completed any new quests."\n\n{Return|dojo}`
+    }
+
+    static hospital() {
+        if (health < calcMaxHp()) {
+            return `You are getting healed by a doctor...\n\n{Leave|townCenter}`
+        } else {
+            return `You are already at maximum health.\n\n{Leave|townCenter}`
+        }
+    }
+
+    static alley() {
+        if (!quests['dojoIntro3'] && !completedQuests.includes("dojoIntro3")) {
+            return `"Sorry, no civilians allowed here. We have an infestation problem."\n\n{Leave|townCenter}`
+        } else {
+            generateEnemy("mouse")
+            return `You are in the alley. There are mice and rats everywhere.\n\n{Leave|townCenter|0|endFight}`
+        }
     }
 }
 
@@ -1005,4 +1349,4 @@ function sceneManager(selected) {
 sceneManager("intro1")
 updateBar("health")
 updateBar("xp")
-updateStats()
+updateBattlestats()

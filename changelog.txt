@@ -1,3 +1,16 @@
+v0.4
+- Begin dojo questline
+- Allow for enemies to fight back
+- Implement dying
+- Fix namings for stat calc formulas
+- Increase energy loss while training
+- Implement quest system
+- Optimise battlestat changes
+- Create stats variable
+- Add mouse enemy
+- Rename increaseSkill to changeSkill
+- Add alley and hospital area
+
 v0.3
 - Implement energy system
 - Replace some accidental single quotes with double quotes

@@ -71,7 +71,7 @@ body {
     color: #ffffff;
 }
 
-#inventory-table, #storage-table {
+#inventory-table, #storage-table, #quests-table {
     border: 1px solid #555555;
     font-size: 16px;
 }
@@ -120,6 +120,24 @@ body {
     height: 20px;
     border-top: 1px solid #555555;
     border-bottom: 1px solid #555555;
+}
+
+.quest-parent {
+    width: 100%;
+    border-top: 1px solid #555555;
+    border-bottom: 1px solid #555555;
+    font-size: 14px;
+}
+
+.quest-title {
+    text-align: center;
+    font-size: 16px;
+    margin-bottom: 5px;
+}
+
+.quest-goals {
+    margin-top: 5px;
+    border-top: 1px solid #555555;
 }
 
 #menu-buttons-holder {
