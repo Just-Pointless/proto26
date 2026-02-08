@@ -1,3 +1,17 @@
+v0.5
+- Change time system
+- Add merchant
+- Implement buying items
+- Fix borders
+- Vertically align item text
+- Improve tooltip system
+- Implement crafting
+- Fix walking time calculation
+- Implement selling items
+- Increase straw drop rate
+- Add crafting skill
+- Display money in inventory
+
 v0.4
 - Begin dojo questline
 - Allow for enemies to fight back

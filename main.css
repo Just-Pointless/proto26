@@ -62,6 +62,28 @@ body {
     color: #7da8e8;
 }
 
+.shop-holder {
+    color: #ffffff;
+    font-size: 16px;
+    max-width: 350px;
+    border: 1px solid #555555;
+    border-left: 2px solid #555555;
+    border-right: 2px solid #555555;
+    background-color: #333333;
+    margin-top: 20px;
+}
+
+.crafting-holder {
+    color: #ffffff;
+    font-size: 16px;
+    max-width: 300px;
+    border: 1px solid #555555;
+    border-left: 2px solid #555555;
+    border-right: 2px solid #555555;
+    background-color: #333333;
+    margin-top: 20px;
+}
+
 #sidebar {
     background-color: #333333;
     position: fixed;
@@ -73,12 +95,23 @@ body {
 
 #inventory-table, #storage-table, #quests-table {
     border: 1px solid #555555;
+    border-left: 2px solid #555555;
+    border-right: 2px solid #555555;
     font-size: 16px;
 }
 
 #inventory-holder {
     text-align: center;
     position: relative;
+}
+
+#inventory-money {
+    display: inline;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    color: #cccc55;
+    font-size: 16px;
 }
 
 #inventory-weight {
@@ -93,6 +126,25 @@ body {
     height: 20px;
     border-top: 1px solid #555555;
     border-bottom: 1px solid #555555;
+    line-height: 20px;
+}
+
+.crafting-item-parent {
+    width: 100%;
+    min-height: 20px;
+    border-top: 1px solid #555555;
+    border-bottom: 1px solid #555555;
+    line-height: 20px;
+}
+
+.crafting-item-holder {
+    height: 20px;
+    border-bottom: 1px solid #555555;
+}
+
+.crafting-item-requirements {
+    font-size: 12px;
+    background-color: #282828;
 }
 
 .item-parent:hover {
@@ -101,12 +153,21 @@ body {
 
 .item-text {
     display: inline-block;
-    width: 80%;
+    width: 240px;
     height: 100%;
 }
 
 .item-quantity {
     color: #ccccff;
+}
+
+.item-price {
+    color: #cccc55;
+    margin-left: 20px;
+}
+
+.item-complexity {
+    color: #ffaa55
 }
 
 #skill-table {

@@ -1,10 +1,9 @@
-const VERSION = "0.4"
+const VERSION = "0.5"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
 var money = 0
 var time = 420
-var day = 0
 var oldScene = ""
 var currentScene = ""
 var health = 10
@@ -52,6 +51,13 @@ var stats = {
     "kills": {},
     "timeSlept": 0
 }
+var shopStorage = {}
+var knownRecipes = ["strawBasket"]
+var craftInfo = {
+    "recipe": null,
+    "goal": 0,
+    "completed": 0
+}
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -66,9 +72,9 @@ const enemyData = {
         "dex": 0,
         "loot": [
             {"item": "straw", "chances": {
-                0: 60,
-                1: 35,
-                2: 5
+                0: 40,
+                1: 50,
+                2: 10
             }}
         ],
         "xp": [3, 5]
@@ -98,6 +104,11 @@ const skillData = {
         "name": "Training",
         "desc": "Increases stat gains from training",
         "scaling": 1.3
+    },
+    "crafting": {
+        "name": "Crafting",
+        "desc": "Increases crafting speed",
+        "scaling": 1.2
     }
 }
 const itemData = {
@@ -105,6 +116,22 @@ const itemData = {
         "name": "Strand of Straw",
         "desc": "A strand of straw that came from a training dummy",
         "weight": 0.5
+    },
+    "exercisePill": {
+        "name": "Exercise Pill",
+        "desc": "Increases stat gain from training by 50% for one hour",
+        "weight": 1
+    },
+    "strawBasket": {
+        "name": "Straw Basket",
+        "desc": "A small basket made of straw",
+        "weight": 10,
+        "crafting": {
+            "complexity": 60,
+            "materials": {
+                "straw": 20
+            }
+        }
     }
 }
 const effectData = {
@@ -173,14 +200,16 @@ const questData = {
         }
     }
 }
+const shopData = {
+    "merchant": [
+        {"name": "exercisePill", "chance": 100, "quantity": [1, 3], "price": [5, 7]}
+    ]
+}
 
-function formatTime(time, day, timeOnly=false) {
+function formatTime(time, timeOnly=false) {
     const baseDate = new Date(1900, 0, 1)
 
-    baseDate.setDate(baseDate.getDate() + day)
-
-    const hours = Math.floor(time / 60)
-    const minutes = time % 60
+    baseDate.setMinutes(baseDate.getMinutes() + time)
 
     const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
@@ -190,11 +219,18 @@ function formatTime(time, day, timeOnly=false) {
     const month = String(baseDate.getMonth() + 1).padStart(2, "0")
     const date = String(baseDate.getDate()).padStart(2, "0")
 
+    const hours = String(baseDate.getHours()).padStart(2, "0")
+    const minutes = String(baseDate.getMinutes()).padStart(2, "0")
+
     const timeString = `${hours}:${String(Math.round(minutes)).padStart(2, "0")}`
     if (timeOnly) {
         return timeString
     }
     return `${dayName} ${year}/${month}/${date} ${timeString}`
+}
+
+function getDay(time) {
+    return Math.ceil((time + 1) / 1440)
 }
 
 function xpToLevel(xp, decimals = false, r = 1.1) {
@@ -288,14 +324,14 @@ function insertLog(content, tooltip=null) {
     if (logAutoScroll) {document.getElementById("log").scrollTop = document.getElementById("log").scrollHeight}
 }
 
-function getFuture(time, day, increase) {
-    const totalMinutes = time + increase
+// function getFuture(time, day, increase) {
+//     const totalMinutes = time + increase
 
-    const newTime = ((totalMinutes % 1440) + 1440) % 1440
-    const newDay = day + Math.floor(totalMinutes / 1440)
+//     const newTime = ((totalMinutes % 1440) + 1440) % 1440
+//     const newDay = day + Math.floor(totalMinutes / 1440)
 
-    return [newTime, newDay]
-}
+//     return [newTime, newDay]
+// }
 
 function playTransition() {
     let transition = document.getElementById("main-transition")
@@ -307,8 +343,12 @@ function playTransition() {
     }, 300)
 }
 
-function randomRange(min, max) {
-    return Math.random() * (max - min) + min
+function randomRange(min, max, round=false) {
+    if (round == false) {
+        return Math.random() * (max - min) + min
+    } else {
+        return Math.round(Math.random() * (max - min) + min)
+    }
 }
 
 function generateEnemy(enemyName) {
@@ -669,10 +709,10 @@ function changeTime(amount) {
     } else {
         stats['timeSlept'] += amount
     }
-    if (time >= 1440) {
-        time -= 1440
-        day += 1
-    }
+    // if (time >= 1440) {
+    //     time -= 1440
+    //     day += 1
+    // }
 }
 
 function changeEffect(effect, enable=true) {
@@ -879,6 +919,154 @@ function changeBattlestat(stat, amount) {
     changeQuestProgress("stats", stat, battleStats[stat])
 }
 
+function generateShop(shopName) {
+    let shopItems = {}
+    if (shopStorage[shopName] == null || shopStorage[shopName]['day'] < getDay(time)) {
+        for (const item of shopData[shopName]) {
+            if (Math.random() < item['chance'] / 100) {
+                shopItems[item['name']] = {
+                    "price": randomRange(item['price'][0], item['price'][1], true),
+                    "quantity": randomRange(item['quantity'][0], item['quantity'][1], true)
+                }
+            }
+        }
+    } else {
+        shopItems = shopStorage[shopName]['items']
+    }
+    shopStorage[shopName] = {
+        "day": getDay(time),
+        "items": shopItems
+    }
+
+    const shopHolder = document.createElement("div")
+    shopHolder.className = "shop-holder"
+    document.getElementById("main").appendChild(shopHolder)
+
+    for (const [item, data] of Object.entries(shopItems)) {
+        const itemParent = document.createElement("div")
+        itemParent.className = "item-parent"
+        itemParent.id = `shop-item-${item}`
+        itemParent.setAttribute("data-tooltip-title", itemData[item]['name'])
+        itemParent.setAttribute("data-tooltip-text", itemData[item]['desc'])
+
+        const itemText = document.createElement("span")
+        itemText.className = "item-text"
+        itemText.textContent = itemData[item]['name']
+
+        const itemQuantity = document.createElement("span")
+        itemQuantity.className = "item-quantity"
+        itemQuantity.textContent = `x${data['quantity']}`
+
+        const itemPrice = document.createElement("span")
+        itemPrice.className = "item-price"
+        itemPrice.textContent = `$${data['price']}`
+
+        itemParent.appendChild(itemText)
+        itemParent.appendChild(itemQuantity)
+        itemParent.appendChild(itemPrice)
+        shopHolder.appendChild(itemParent)
+    }
+
+    shopHolder.addEventListener("click", function(e) {
+        let item = null
+        if (e.target.id.startsWith("shop-item-")) {
+            item = e.target.id.replace("shop-item-", "")
+        } else if (e.target.parentElement.id.startsWith("shop-item-")) {
+            item = e.target.parentElement.id.replace("shop-item-", "")
+        }
+
+        if (item != null) {
+            if (shopStorage[shopName]['items'][item]['quantity'] <= 0) {
+                insertLog(colorGen("#aaaaaa", "Out of stock"))
+            } else {
+                if (money >= shopStorage[shopName]['items'][item]['price']) {
+                    changeMoney(-shopStorage[shopName]['items'][item]['price'])
+                    shopStorage[shopName]['items'][item]['quantity'] -= 1
+                    document.getElementById(`shop-item-${item}`).getElementsByClassName("item-quantity")[0].textContent = `x${shopStorage[shopName]['items'][item]['quantity']}`
+                    changeInventory(item, 1)
+                } else {
+                    insertLog(colorGen("#aaaaaa", "Not enough money"))
+                }
+            }
+        }
+    })
+}
+
+function generateCraftingMenu() {
+    const craftingHolder = document.createElement("div")
+    craftingHolder.className = "crafting-holder"
+    document.getElementById("main").appendChild(craftingHolder)
+
+    for (const item of knownRecipes) {
+        const itemParent = document.createElement("div")
+        itemParent.className = "crafting-item-parent"
+        itemParent.id = `crafting-item-${item}`
+        itemParent.setAttribute("data-tooltip-title", itemData[item]['name'])
+        itemParent.setAttribute("data-tooltip-text", itemData[item]['desc'])
+
+        const itemHolder = document.createElement("div")
+        itemHolder.className = "crafting-item-holder"
+
+        const itemText = document.createElement("span")
+        itemText.className = "item-text"
+        itemText.textContent = itemData[item]['name']
+
+        const itemComplexity = document.createElement("span")
+        itemComplexity.className = "item-complexity"
+        itemComplexity.textContent = itemData[item]['crafting']['complexity']
+
+        const requirementsHolder = document.createElement("div")
+        requirementsHolder.className = "crafting-item-requirements"
+
+        for (const [craftingItem, amount] of Object.entries(itemData[item]['crafting']['materials'])) {
+            const materialElement = document.createElement("span")
+            materialElement.textContent = `x${amount} ${itemData[craftingItem]['name']}`
+            if (inventory[craftingItem] >= amount) {
+                materialElement.style.color = "#aaffaa"
+            }
+
+            requirementsHolder.appendChild(materialElement)
+        }
+
+        itemHolder.appendChild(itemText)
+        itemHolder.appendChild(itemComplexity)
+        itemParent.appendChild(itemHolder)
+        itemParent.appendChild(requirementsHolder)
+        craftingHolder.appendChild(itemParent)
+    }
+
+    craftingHolder.addEventListener("click", function(e) {
+        let item = e.target.closest("[id^=\"crafting-item-\"]").id.replace("crafting-item-", "")
+        if (item != null) {
+            for (const [craftingItem, amount] of Object.entries(itemData[item]['crafting']['materials'])) {
+                if (inventory[craftingItem] < amount || inventory[craftingItem] == undefined) {
+                    insertLog(colorGen("#aaaaaa", "Missing materials"))
+                    return
+                }
+            }
+
+            let arrival = Math.ceil(time + itemData[item]['crafting']['complexity'] / getCraftingSpeed())
+            craftInfo['completed'] = 0
+            craftInfo['goal'] = itemData[item]['crafting']['complexity']
+            craftInfo['recipe'] = item
+            processText(`You are crafting "${itemData[item]['name']}". You'll finish at ${colorGen("#CCCCFF", formatTime(arrival, true))}`)
+            playTransition()
+        }
+    })
+}
+
+function changeMoney(amount) {
+    money += amount
+    if (amount > 0) {
+        insertLog(`Obtained ${colorGen("#cccc55", `$${amount}`)}`)
+    }
+    document.getElementById("inventory-money").textContent = `$${money}`
+}
+
+function getCraftingSpeed() {
+    return 1 + (0.05 * getSkillLevel("crafting"))
+}
+
 const sceneTicks = new Map([
     ["trainingGrounds_str", function() {
         changeBattlestat("str", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
@@ -947,6 +1135,22 @@ setInterval(function() {
             travelInfo['destination'] = null
             travelInfo['distance'] = 0
             travelInfo['completed'] = 0
+        }
+    }
+
+    if (craftInfo['recipe'] != null) {
+        craftInfo['completed'] += getCraftingSpeed()
+        changeSkill("crafting", 1)
+        if (craftInfo['completed'] >= craftInfo['goal']) {
+            playTransition()
+            for (const [craftingItem, amount] of Object.entries(itemData[craftInfo['recipe']]['crafting']['materials'])) {
+                changeInventory(craftingItem, -amount)
+            }
+            changeInventory(craftInfo['recipe'], 1)
+            craftInfo['recipe'] = null
+            craftInfo['completed'] = 0
+            craftInfo['goal'] = 0
+            sceneManager("table")
         }
     }
 
@@ -1021,7 +1225,7 @@ setInterval(function() {
     // updateBar("xp") No longer needed as changexp function updates it
     // updateStats() No longer needed as changestat function updates it
 
-    document.getElementById("center-top").textContent = formatTime(time, day)
+    document.getElementById("center-top").textContent = formatTime(time)
 }, 1000)
 
 for (const elem of document.getElementById("menu-buttons-holder").children) {
@@ -1045,18 +1249,20 @@ let activeTarget = null
 document.addEventListener("mouseover", function(e) {
     let tooltipTitle = e.target.getAttribute("data-tooltip-title")
     let tooltipText = e.target.getAttribute("data-tooltip-text")
-    if (tooltipTitle == undefined) {
-        if (e.target.parentElement != undefined) {
-            tooltipTitle = e.target.parentElement.getAttribute("data-tooltip-title")
-            tooltipText = e.target.parentElement.getAttribute("data-tooltip-text")
-        }
-        if (tooltipTitle == undefined) {
-            return
-        }
-    }
-    activeTarget = e.target
-    document.getElementById("tooltip-title").textContent = tooltipTitle
-    document.getElementById("tooltip-text").textContent = tooltipText
+    // if (tooltipTitle == undefined) {
+    //     if (e.target.parentElement != undefined) {
+    //         tooltipTitle = e.target.parentElement.getAttribute("data-tooltip-title")
+    //         tooltipText = e.target.parentElement.getAttribute("data-tooltip-text")
+    //     }
+    //     if (tooltipTitle == undefined) {
+    //         return
+    //     }
+    // }
+    const elem = e.target.closest("[data-tooltip-title]")
+    if (!elem) return
+    activeTarget = elem
+    document.getElementById("tooltip-title").textContent = elem.getAttribute("data-tooltip-title")
+    document.getElementById("tooltip-text").textContent = elem.getAttribute("data-tooltip-text")
     const tooltip = document.getElementById("tooltip")
     const offset = 14
 
@@ -1156,7 +1362,7 @@ class scenes {
     }
 
     static home() {
-        return `You are in your home. You can rest here.\n\n{Sleep|sleep}\n{Storage|storage}\n\n{Leave|housingArea}`
+        return `You are in your home. You can rest here.\n\n{Sleep|sleep}\n{Storage|storage}\n{Table|table}\n\n{Leave|housingArea}`
     }
 
     static sleep() {
@@ -1168,12 +1374,16 @@ class scenes {
         return `You can access your storage from the sidebar. Click an item in your inventory to deposit it and click an item in your storage to withdraw it.\n\n{Leave|home|0|leaveStorage}`
     }
 
+    static table() {
+        return `You are able to craft items here.\n\n{Leave|home}`
+    }
+
     static housingArea() {
         return `You are in the housing area of the town. You can access your home or other areas from here.\n\n{Home|home}\n\n{Town Center|townCenter|250}`
     }
 
     static townCenter() {
-        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Hospital|hospital}\n\n{Alley|alley}\n\n{Housing Area|housingArea|250}`
+        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Hospital|hospital}\n{Merchant|merchant}\n\n{Alley|alley}\n\n{Housing Area|housingArea|250}`
     }
 
     static noticeBoard() {
@@ -1272,6 +1482,18 @@ class scenes {
             return `You are in the alley. There are mice and rats everywhere.\n\n{Leave|townCenter|0|endFight}`
         }
     }
+
+    static merchant() {
+        return `"Welcome! I'm the main supplier of various goods in this town. I can also buy any straw baskets that you may have. Feel free to look around."\n\n{Sell|merchantSell}\n\n{Leave|townCenter}`
+    }
+
+    static merchantSell() {
+        if (inventory['strawBasket'] == undefined) {
+            return `"It appears that you don't have any straw baskets to sell. Come back when you get some, I pay $5 for each."\n\n{Return|merchant}`
+        } else {
+            return `"Would you like to sell all your straw baskets for a total of ${colorGen("#cccc55", `$${inventory['strawBasket'] * 5}`)}?"\n\n{Yes|merchant|0|merchantSell}\n\n{Return|merchant}`
+        }
+    }
 }
 
 class sceneFunctions {
@@ -1281,6 +1503,21 @@ class sceneFunctions {
 
     static leaveStorage() {
         toggleStorageAccess(false)
+    }
+
+    static merchantSell() {
+        changeMoney(inventory['strawBasket'] * 5)
+        changeInventory("strawBasket", -inventory['strawBasket'])
+    }
+}
+
+class sceneEndFunctions {
+    static merchant() {
+        generateShop("merchant")
+    }
+
+    static table() {
+        generateCraftingMenu()
     }
 }
 
@@ -1327,8 +1564,8 @@ function processText(text) {
                     }
                     sceneManager(splitLinks[num][2])
                 } else {
-                    let arrival = getFuture(time, day, Number(splitLinks[num][3]) / getMovementSpeed())
-                    processText(`You are walking towards the ${splitLinks[num][1]}. You'll arrive at ${colorGen("#CCCCFF", formatTime(arrival[0], arrival[1], true))}`)
+                    let arrival = Math.ceil(time + Number(splitLinks[num][3]) / getMovementSpeed())
+                    processText(`You are walking towards the ${splitLinks[num][1]}. You'll arrive at ${colorGen("#CCCCFF", formatTime(arrival, true))}`)
                     travelInfo['destination'] = splitLinks[num][2]
                     travelInfo['distance'] = Number(splitLinks[num][3])
                 }
@@ -1342,6 +1579,7 @@ function processText(text) {
 function sceneManager(selected) {
     var selectedScene = scenes[selected]()
     processText(selectedScene)
+    if (sceneEndFunctions[selected]) {sceneEndFunctions[selected]()}
     oldScene = currentScene
     currentScene = selected
 }
