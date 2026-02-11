@@ -1,3 +1,15 @@
+v0.6
+- Implement rank changes
+- Made exercise pill usable
+- Move stat gain multi calculation to changebattlestat function
+- Support html in tooltips
+- Add exercise pill as reward for dojo quests
+- Add fighting teams
+- Add team areas
+- Add new gym
+- Display total stats
+- Move setinterval to tick function
+
 v0.5
 - Change time system
 - Add merchant

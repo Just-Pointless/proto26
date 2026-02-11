@@ -1,4 +1,4 @@
-const VERSION = "0.5"
+const VERSION = "0.6"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -58,6 +58,7 @@ var craftInfo = {
     "goal": 0,
     "completed": 0
 }
+var team = "none"
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -120,7 +121,10 @@ const itemData = {
     "exercisePill": {
         "name": "Exercise Pill",
         "desc": "Increases stat gain from training by 50% for one hour",
-        "weight": 1
+        "weight": 1,
+        "execute": function() {
+            changeEffect("exercisePill", true, 60)
+        }
     },
     "strawBasket": {
         "name": "Straw Basket",
@@ -139,6 +143,11 @@ const effectData = {
         "name": "Sleep Deprived",
         "desc": "Due to a lack of sleep, your energy loss per minute has increased",
         "color": "#006666"
+    },
+    "exercisePill": {
+        "name": "Exercise Pill",
+        "desc": "Stat gain is increased by 50%",
+        "color": "#cccc00"
     }
 }
 const questData = {
@@ -206,6 +215,21 @@ const shopData = {
     ]
 }
 
+const gyms = {
+    "none": {
+        "str": 0.01,
+        "def": 0.01,
+        "spd": 0.01,
+        "dex": 0.01
+    },
+    "nextLevel": {
+        "str": 0.02,
+        "def": 0.02,
+        "spd": 0.02,
+        "dex": 0.02
+    }
+}
+
 function formatTime(time, timeOnly=false) {
     const baseDate = new Date(1900, 0, 1)
 
@@ -256,8 +280,33 @@ function calcMaxHp(level=xpToLevel(xp)) {
     return Math.round(2 * level ** 1.5 + level + 10)
 }
 
-function updateLevelText(xp) {
-    document.getElementById("level").textContent = `Level ${xpToLevel(xp)} G-`
+const ranks = [
+    {"rank": "G-", "max": 5},
+    {"rank": "G", "max": 20},
+    {"rank": "G+", "max": 100},
+    {"rank": "E-", "max": 500},
+    {"rank": "E", "max": 2000},
+    {"rank": "E+", "max": 10_000},
+    {"rank": "D-", "max": 40_000},
+    {"rank": "D", "max": 200_000},
+    {"rank": "D+", "max": 1_000_000},
+    {"rank": "C-", "max": 5_000_000},
+    {"rank": "C", "max": 25_000_000},
+    {"rank": "C+", "max": 100_000_000},
+    {"rank": "B-", "max": 500_000_000},
+    {"rank": "B", "max": 2_500_000_000},
+    {"rank": "B+", "max": 10_000_000_000},
+    {"rank": "A-", "max": 1e11},
+    {"rank": "A", "max": 1e12},
+    {"rank": "A+", "max": Infinity},
+]
+
+function getRank() {
+    return ranks.find(r => getTotalBattlestats() < r['max'])['rank']
+}
+
+function updateLevelText(currentXp=xp) {
+    document.getElementById("level").textContent = `Level ${xpToLevel(currentXp)} ${getRank()}`
 }
 
 function updateBar(bar) {
@@ -283,6 +332,7 @@ function updateBattlestats(statName=null) {
             const effectiveStat = value * calcEnergyDebuff()
             const debuffPercentage = effectiveStat / value * 100 - 100
             document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
+            document.getElementById(`stat-total`).textContent = `Ttl: ${formatNumber(getTotalBattlestats())}`
         }
     }
 }
@@ -528,7 +578,7 @@ function getRandomLoot(weightedDict) {
     }
 }
 
-function changeInventory(item, amount) {
+function changeInventory(item, amount, announceReduction=false) {
     if (inventory[item] == undefined) {
         if (amount <= 0) {return false}
         inventory[item] = amount
@@ -562,6 +612,8 @@ function changeInventory(item, amount) {
     }
     if (amount > 0) {
         insertLog(`Obtained ${colorGen("#ccccff", `x${amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
+    } else if (announceReduction == true) {
+        insertLog(`Used ${colorGen("#ccccff", `x${-amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
     }
     if (itemData[item]['weight']) {
         const maxWeight = getMaxWeight()
@@ -698,6 +750,14 @@ function changeEnergy(amount) {
     if (amount < 0 && oldenergy > 35 && energy < 35) {
         insertLog(colorGen("#aaaaaa", "You start to feel tired"))
     }
+
+    for (const [stat, value] of Object.entries(battleStats)) {
+        const effectiveStat = value * calcEnergyDebuff()
+        const debuffPercentage = effectiveStat / value * 100 - 100
+        document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
+    }
+    document.getElementById(`stat-total`).textContent = `Ttl: ${formatNumber(getTotalBattlestats())}`
+
     updateBar("energy")
 }
 
@@ -715,18 +775,29 @@ function changeTime(amount) {
     // }
 }
 
-function changeEffect(effect, enable=true) {
+function changeEffect(effect, enable=true, duration=0) {
     if (enable == true) {
         if (effects[effect] == undefined) {
-            effects[effect] = true
+            if (duration == 0) {
+                effects[effect] = true
+            } else {
+                effects[effect] = duration + time
+            }
             const div = document.createElement("div")
             div.className = "effect-icon"
             div.id = `effect-${effect}`
             div.style.backgroundColor = effectData[effect]['color']
             div.setAttribute("data-tooltip-title", effectData[effect]['name'])
-            div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
+            if (duration == 0) {
+                div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
+            } else {
+                div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}\nEnds: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
+            }
 
             document.getElementById("effects-bar").appendChild(div)
+        } else if (duration != 0) {
+            effects[effect] += duration
+            document.getElementById(`effect-${effect}`).setAttribute("data-tooltip-text", `${effectData[effect]['desc']}\nEnds: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
         }
     } else {
         if (effects[effect] != undefined) {
@@ -914,9 +985,16 @@ function changeQuestProgress(type, stat, value) {
 }
 
 function changeBattlestat(stat, amount) {
-    battleStats[stat] += amount
+    let multi = 1
+    multi = multi * (1 + getSkillLevel("training") * 0.02)
+    multi = multi * calcEnergyDebuff()
+    if (effects['exercisePill']) {
+        multi *= 1.5
+    }
+    battleStats[stat] += amount * multi
     updateBattlestats(stat)
     changeQuestProgress("stats", stat, battleStats[stat])
+    updateLevelText()
 }
 
 function generateShop(shopName) {
@@ -1069,22 +1147,22 @@ function getCraftingSpeed() {
 
 const sceneTicks = new Map([
     ["trainingGrounds_str", function() {
-        changeBattlestat("str", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeBattlestat("str", gyms['none']['str'])
         changeSkill("training", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_def", function() {
-        changeBattlestat("def", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeBattlestat("def", gyms['none']['def'])
         changeSkill("training", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_spd", function() {
-        changeBattlestat("spd", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeBattlestat("spd", gyms['none']['spd'])
         changeSkill("training", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_dex", function() {
-        changeBattlestat("dex", 0.01 * (1 + getSkillLevel("training") * 0.02) * calcEnergyDebuff())
+        changeBattlestat("dex", gyms['none']['dex'])
         changeSkill("training", 1)
         changeEnergy(-0.2)
     }],
@@ -1108,6 +1186,26 @@ const sceneTicks = new Map([
             generateEnemy("mouse")
         }
     }],
+    ["trainingGrounds_nextLevel_str", function() {
+        changeBattlestat("str", gyms['nextLevel']['str'])
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
+    }],
+    ["trainingGrounds_nextLevel_def", function() {
+        changeBattlestat("def", gyms['nextLevel']['def'])
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
+    }],
+    ["trainingGrounds_nextLevel_spd", function() {
+        changeBattlestat("spd", gyms['nextLevel']['spd'])
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
+    }],
+    ["trainingGrounds_nextLevel_dex", function() {
+        changeBattlestat("dex", gyms['nextLevel']['dex'])
+        changeSkill("training", 1)
+        changeEnergy(-0.2)
+    }],
 ])
 
 const effectFunctions = new Map([
@@ -1116,7 +1214,7 @@ const effectFunctions = new Map([
     }]
 ])
 
-setInterval(function() {
+function tick() {
     stats['playtime'] += 1
     changeTime(currentScene != "sleep" ? 1 : 10)
 
@@ -1151,6 +1249,14 @@ setInterval(function() {
             craftInfo['completed'] = 0
             craftInfo['goal'] = 0
             sceneManager("table")
+        }
+    }
+
+    for (const [effect, value] of Object.entries(effects)) {
+        if (Number.isInteger(value)) {
+            if (value <= time) {
+                changeEffect(effect, false)
+            }
         }
     }
 
@@ -1226,7 +1332,9 @@ setInterval(function() {
     // updateStats() No longer needed as changestat function updates it
 
     document.getElementById("center-top").textContent = formatTime(time)
-}, 1000)
+}
+
+setInterval(tick, 1000)
 
 for (const elem of document.getElementById("menu-buttons-holder").children) {
     elem.addEventListener("click", function() {
@@ -1247,8 +1355,6 @@ for (const elem of document.getElementById("menu-buttons-holder").children) {
 let activeTarget = null
 
 document.addEventListener("mouseover", function(e) {
-    let tooltipTitle = e.target.getAttribute("data-tooltip-title")
-    let tooltipText = e.target.getAttribute("data-tooltip-text")
     // if (tooltipTitle == undefined) {
     //     if (e.target.parentElement != undefined) {
     //         tooltipTitle = e.target.parentElement.getAttribute("data-tooltip-title")
@@ -1260,9 +1366,15 @@ document.addEventListener("mouseover", function(e) {
     // }
     const elem = e.target.closest("[data-tooltip-title]")
     if (!elem) return
+    const tooltipTitle = elem.getAttribute("data-tooltip-title")
+    const tooltipText = elem.getAttribute("data-tooltip-text")
     activeTarget = elem
-    document.getElementById("tooltip-title").textContent = elem.getAttribute("data-tooltip-title")
-    document.getElementById("tooltip-text").textContent = elem.getAttribute("data-tooltip-text")
+    document.getElementById("tooltip-title").textContent = tooltipTitle
+    if (tooltipText != undefined && tooltipText.includes("<")) {
+        document.getElementById("tooltip-text").innerHTML = tooltipText
+    } else {
+        document.getElementById("tooltip-text").textContent = tooltipText
+    }
     const tooltip = document.getElementById("tooltip")
     const offset = 14
 
@@ -1316,6 +1428,19 @@ document.addEventListener("mousemove", function (e) {
     tooltip.style.top = `${top}px`
 })
 
+document.getElementById("inventory-table").addEventListener("click", function(e) {
+    let item = e.target.closest("[id^=\"item-\"]").id.replace("item-", "")
+    if (item != null) {
+        if (itemData[item]['execute']) {
+            itemData[item]['execute']()
+            changeInventory(item, -1, true)
+        }
+    }
+})
+
+function getTotalBattlestats() {
+    return battleStats['str'] + battleStats['def'] + battleStats['spd'] + battleStats['dex']
+}
 
 class scenes {
     static intro1() {
@@ -1391,7 +1516,23 @@ class scenes {
     }
 
     static trainingGrounds() {
-        return `You are in the training grounds. You are able to improve your strength, defense, speed or dexterity here.\n\n{Training Instructor|trainingGroundsInstructor}\n\n{Train Strength|trainingGrounds_str}\n{Train Defense|trainingGrounds_def}\n{Train Speed|trainingGrounds_spd}\n{Train Dexterity|trainingGrounds_dex}\n\n{Leave|townCenter}`
+        if (!checks['trainingGroundsTeamIntro'] && getTotalBattlestats() >= 10) {
+            checks['trainingGroundsTeamIntro'] = true
+            return `"Hi! we're an up-and-coming fighting team for matches in The Arena. If you're willing to represent our team, we'll give you various supplies and equipment to help you improve your stats quickly. Sounds good?"\n\n{Yes|trainingGroundsTeamIntro1}\n\n{Maybe Later|trainingGrounds}`
+        }
+
+        let r = `You are in the training grounds. You are able to improve your strength, defense, speed or dexterity here.\n\n{Training Instructor|trainingGroundsInstructor}`
+        if (checks['trainingGroundsTeamIntro'] && team != "nextLevel") {
+            r += `\n\n{Join Team|trainingGroundsTeamIntro1}`
+        }
+        
+        if (team == "nextLevel") {
+            r += `\n\n{Team Tent|trainingGrounds_nextLevel}`
+        } else {
+            r += `\n\n{Train Strength|trainingGrounds_str}\n{Train Defense|trainingGrounds_def}\n{Train Speed|trainingGrounds_spd}\n{Train Dexterity|trainingGrounds_dex}`
+        }
+        r += `\n\n{Leave|townCenter}`
+        return r
     }
 
     static trainingGroundsInstructor() {
@@ -1416,6 +1557,44 @@ class scenes {
 
     static trainingGrounds_dex() {
         return `You are balancing on a beam in the training grounds.\n\n{Stop|trainingGrounds}`
+    }
+
+    static trainingGroundsTeamIntro1() {
+        return `"Awesome! I'll tell you everything you need to know. Follow me"\n\n{Continue|trainingGroundsTeamIntro2}`
+    }
+
+    static trainingGroundsTeamIntro2() {
+        return `You follow the young man in to a large tent on the field\n\n"This is the tent with all our special training equipment and staff. Training here would be 2x as effective than the public equipment."\n\n{Continue|trainingGroundsTeamIntro3}`
+    }
+
+    static trainingGroundsTeamIntro3() {
+        return `"We give rewards like exercise pills depending on how well you place in the weekly arena matches. On top of that, you also gain money from the competition organisers themselves."\n\n{Continue|trainingGroundsTeamIntro4}`
+    }
+
+    static trainingGroundsTeamIntro4() {
+        changeInventory("exercisePill", 4)
+        team = "nextLevel"
+        return `"Arena matches always run on a Sunday, I suggest beginning your training now. Here are 4 exercise pills as a thanks for joining us."\n\n{Continue|trainingGrounds_nextLevel}`
+    }
+
+    static trainingGrounds_nextLevel() {
+        return `You are inside your team's tent.\n\n{Train Strength|trainingGrounds_nextLevel_str}\n{Train Defense|trainingGrounds_nextLevel_def}\n{Train Speed|trainingGrounds_nextLevel_spd}\n{Train Dexterity|trainingGrounds_nextLevel_dex}\n\n{Leave|trainingGrounds}`
+    }
+
+    static trainingGrounds_nextLevel_str() {
+        return `You are lifting weights in your team's tent.\n\n{Stop|trainingGrounds_nextLevel}`
+    }
+
+    static trainingGrounds_nextLevel_def() {
+        return `You are practicing sparring against a team member.\n\n{Stop|trainingGrounds_nextLevel}`
+    }
+
+    static trainingGrounds_nextLevel_spd() {
+        return `You are practicing spot jogging in your team's tent.\n\n{Stop|trainingGrounds_nextLevel}`
+    }
+
+    static trainingGrounds_nextLevel_dex() {
+        return `You are practicing dodging punches from a team member.\n\n{Stop|trainingGrounds_nextLevel}`
     }
 
     static dojo() {
@@ -1455,10 +1634,12 @@ class scenes {
         if (completedQuests.includes("dojoIntro1") && !checks['dojoIntro1Talked']) {
             checks['dojoIntro1Talked'] = true
             giveQuest("dojoIntro2")
+            changeInventory("exercisePill", 1)
             return `"Good job, you've proven that you're able to do some basic fighting. Unlike real enemies, these dummies don't fight back or move. For your next task: get all your battle stats to 1.5. Then I can give you some real enemies to fight."\n\n{Return|dojo}`
         } else if (completedQuests.includes("dojoIntro2") && !checks['dojoIntro2Talked']) {
             checks['dojoIntro2Talked'] = true
             giveQuest("dojoIntro3")
+            changeInventory("exercisePill", 1)
             return `"You now have some decent stats, still below the average human in this world but you should now be able do my next quest without issue. Your goal is to defeat 10 mice in the alleys. Visit the hospital if your health drops too low. If you struggle to defeat the mice, I suggest training a bit more."\n\n{Return|dojo}`
         } else if (completedQuests.includes("dojoIntro3")) {
             return `"Congratulations on completing all my quests. This is the end of my questline for now, you can still continue training and levelling up your skills. Good luck."\n\n{Return|dojo}`
