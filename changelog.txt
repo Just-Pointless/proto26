@@ -1,3 +1,17 @@
+v0.7
+- Implement equipment
+- Improve scrollbar design
+- Implement non stackable items
+- Implement item types
+- Add colors to item types
+- Round xp gain
+- Change tooltip formatting on effects
+- Add town north
+- Add park
+- Add exploring skill
+- Fix skill level up typo
+- Improve tooltip updating
+
 v0.6
 - Implement rank changes
 - Made exercise pill usable

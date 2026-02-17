@@ -1,4 +1,4 @@
-const VERSION = "0.6"
+const VERSION = "0.7"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -37,7 +37,10 @@ var checks = {}
 var logAutoScroll = true
 var skills = {}
 var inventory = {}
+var inventoryNonStackable = {}
+var inventoryNonStackableIncrement = 0
 var storage = {}
+var storageNonStackable = {}
 var storageAccess = false
 var inventoryWeight = 0
 var energy = 100
@@ -59,6 +62,21 @@ var craftInfo = {
     "completed": 0
 }
 var team = "none"
+var equipment = {
+    "weapon": null,
+    "shield": null,
+    "head": null,
+    "chest": null,
+    "arms": null,
+    "legs": null,
+    "accessory1": null,
+    "accessory2": null
+}
+var exploreData = {
+    "area": null,
+    "goal": 0,
+    "completed": 0
+}
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -110,17 +128,24 @@ const skillData = {
         "name": "Crafting",
         "desc": "Increases crafting speed",
         "scaling": 1.2
+    },
+    "exploration": {
+        "name": "Exploration",
+        "desc": "Increases speed of exploring",
+        "scaling": 1.3
     }
 }
 const itemData = {
     "straw": {
         "name": "Strand of Straw",
         "desc": "A strand of straw that came from a training dummy",
+        "class": "misc",
         "weight": 0.5
     },
     "exercisePill": {
         "name": "Exercise Pill",
         "desc": "Increases stat gain from training by 50% for one hour",
+        "class": "consumable",
         "weight": 1,
         "execute": function() {
             changeEffect("exercisePill", true, 60)
@@ -129,6 +154,7 @@ const itemData = {
     "strawBasket": {
         "name": "Straw Basket",
         "desc": "A small basket made of straw",
+        "class": "misc",
         "weight": 10,
         "crafting": {
             "complexity": 60,
@@ -136,6 +162,24 @@ const itemData = {
                 "straw": 20
             }
         }
+    },
+    "woodenStick": {
+        "name": "Wooden Stick",
+        "desc": "A blunt wooden stick. Barely better than your fists",
+        "class": "gear",
+        "weight": 120,
+        "durability": [80, 120],
+        "stackable": false,
+        "combat": {
+            "class": "weapon",
+            "damage": [1.2, 1.4]
+        }
+    },
+    "grass": {
+        "name": "Blade of Grass",
+        "desc": "Can be used to make healing potions",
+        "class": "misc",
+        "weight": 0.2
     }
 }
 const effectData = {
@@ -214,7 +258,6 @@ const shopData = {
         {"name": "exercisePill", "chance": 100, "quantity": [1, 3], "price": [5, 7]}
     ]
 }
-
 const gyms = {
     "none": {
         "str": 0.01,
@@ -228,6 +271,11 @@ const gyms = {
         "spd": 0.02,
         "dex": 0.02
     }
+}
+const itemClasses = {
+    "misc": "#cccccc",
+    "consumable": "#ffcc22",
+    "gear": "#ff8888"
 }
 
 function formatTime(time, timeOnly=false) {
@@ -393,12 +441,11 @@ function playTransition() {
     }, 300)
 }
 
-function randomRange(min, max, round=false) {
-    if (round == false) {
-        return Math.random() * (max - min) + min
-    } else {
-        return Math.round(Math.random() * (max - min) + min)
-    }
+function randomRange(min, max, decimals=-1) {
+    const value = Math.random() * (max - min) + min
+    if (decimals == -1) {return value}
+    const factor = Math.pow(10, decimals)
+    return Math.round(value * factor) / factor
 }
 
 function generateEnemy(enemyName) {
@@ -406,7 +453,7 @@ function generateEnemy(enemyName) {
     const enemy = enemyData[enemyName]
     combatData['enemyProperties'] = enemy['properties']
     if (Array.isArray(enemy['health'])) {
-        combatData['enemyMaxHealth'] = Math.round(randomRange(enemy['health'][0], enemy['health'][1]))
+        combatData['enemyMaxHealth'] = randomRange(enemy['health'][0], enemy['health'][1], 0)
     } else {
         combatData['enemyMaxHealth'] = enemy['health']
     }
@@ -415,7 +462,7 @@ function generateEnemy(enemyName) {
     const statTypes = ["str", "def", "spd", "dex"]
     for (const stat of statTypes) {
         if (Array.isArray(enemy[stat])) {
-            combatData['enemyStats'][stat] = Number(randomRange(enemy[stat][0], enemy[stat][1]).toFixed(2))
+            combatData['enemyStats'][stat] = randomRange(enemy[stat][0], enemy[stat][1], 2)
         } else {
             combatData['enemyStats'][stat] = enemy[stat]
         }
@@ -460,7 +507,7 @@ function killEnemy() {
     }
 
     if (enemyData[combatData['enemy']]['xp'] != undefined) {
-        let xpGain = Math.round(randomRange(enemyData[combatData['enemy']]['xp'][0], enemyData[combatData['enemy']]['xp'][1]))
+        let xpGain = Math.round(randomRange(enemyData[combatData['enemy']]['xp'][0], enemyData[combatData['enemy']]['xp'][1], 2))
         changeXp(xpGain)
     }
 
@@ -533,7 +580,7 @@ function changeSkill(skill, skillXp) {
     }
 
     if (currentLevel < xpToLevel(skills[skill], false, scaling)) {
-        insertLog(colorGen("#bbbb44", `${skillData[skill]['name']} increased to to ${xpToLevel(skills[skill], false, scaling)}`))
+        insertLog(colorGen("#bbbb44", `${skillData[skill]['name']} increased to ${xpToLevel(skills[skill], false, scaling)}`))
     }
 }
 
@@ -573,48 +620,101 @@ function getRandomLoot(weightedDict) {
         randomNum -= weightedDict[item]
         
         if (randomNum <= 0) {
-            return Number(item)
+            return isFinite(item) ? Number(item) : item
         }
     }
 }
 
-function changeInventory(item, amount, announceReduction=false) {
-    if (inventory[item] == undefined) {
-        if (amount <= 0) {return false}
-        inventory[item] = amount
-        const itemParent = document.createElement("div")
-        itemParent.className = "item-parent"
-        itemParent.id = `item-${item}`
-        itemParent.setAttribute("data-tooltip-title", itemData[item]['name'])
-        itemParent.setAttribute("data-tooltip-text", itemData[item]['desc'])
+function createItemDiv(item, type = "inventory", stackable = true, increment = null) {
+    const isInventory = type === "inventory"
 
-        const itemText = document.createElement("span")
-        itemText.className = "item-text"
-        itemText.textContent = itemData[item]['name']
+    const idPrefix = isInventory ? "item" : "storage-item"
+    const quantitySource = isInventory ? inventory : storage
 
+    const itemParent = document.createElement("div")
+    itemParent.className = "item-parent"
+    itemParent.id = stackable ? `${idPrefix}-${item}` : `${idPrefix}-${item}_${increment}`
+    itemParent.setAttribute("data-tooltip-title", itemData[item]['name'])
+    itemParent.setAttribute("data-tooltip-text", itemData[item]['desc'])
+    if (itemData[item]['combat']) {itemParent.setAttribute("data-tooltip-special", "equipment")}
+
+    const itemText = document.createElement("span")
+    itemText.className = "item-text"
+    itemText.textContent = itemData[item]['name']
+    itemText.style.color = itemClasses[itemData[item]['class']]
+
+    itemParent.appendChild(itemText)
+
+    if (stackable) {
         const itemQuantity = document.createElement("span")
         itemQuantity.className = "item-quantity"
-        itemQuantity.textContent = `x${inventory[item]}`
-
-        itemParent.appendChild(itemText)
+        itemQuantity.textContent = `x${quantitySource[item]}`
         itemParent.appendChild(itemQuantity)
-        document.getElementById("inventory-table").appendChild(itemParent)
-    } else {
-        if (inventory[item] + amount < 0) {return false}
-        inventory[item] += amount
+    }
 
-        if (inventory[item] == 0) {
-            delete inventory[item]
-            document.getElementById(`item-${item}`).remove()
+    document.getElementById(isInventory ? "inventory-table" : "storage-table").appendChild(itemParent)
+}
+
+function genItemLogText(item, amount) {
+    return `${amount != null ? colorGen("#ccccff", `x${Math.abs(amount)} `) : ""}${colorGen(itemClasses[itemData[item]['class']], itemData[item]['name'])}`
+}
+
+function changeInventory(item, amount, announceReduction=false, itemId=null, newItemData=null) {
+    if (itemData[item]['stackable'] !== false) {
+        if (inventory[item] == undefined) {
+            if (amount <= 0) {return false}
+            inventory[item] = amount
+            createItemDiv(item)
         } else {
-            document.getElementById(`item-${item}`).getElementsByClassName("item-quantity")[0].textContent = `x${inventory[item]}`
+            if (inventory[item] + amount < 0) {return false}
+            inventory[item] += amount
+
+            if (inventory[item] == 0) {
+                delete inventory[item]
+                document.getElementById(`item-${item}`).remove()
+            } else {
+                document.getElementById(`item-${item}`).getElementsByClassName("item-quantity")[0].textContent = `x${inventory[item]}`
+            }
+        }
+    } else {
+        if (amount == 1) {
+            if (newItemData == null) {
+                newItemData = {"name": item}
+                const itemCombatData = itemData[item]['combat']
+                if (itemCombatData) {
+                    newItemData['durability'] = randomRange(itemData[item]['durability'][0], itemData[item]['durability'][1], 0)
+                    if (itemCombatData['class'] == "weapon") {
+                        newItemData['damage'] = randomRange(itemCombatData['damage'][0], itemCombatData['damage'][1], 2)
+                    }
+                }
+            }
+
+            if (itemId == null) {
+                inventoryNonStackable[inventoryNonStackableIncrement] = newItemData
+                inventoryNonStackableIncrement += 1
+                createItemDiv(item, "inventory", false, inventoryNonStackableIncrement - 1)
+            } else {
+                inventoryNonStackable[itemId] = newItemData
+                createItemDiv(item, "inventory", false, itemId)
+            }
+        } else {
+            if (itemData[item]['combat']) {
+                const itemClass = itemData[item]['combat']['class']
+                if (equipment[itemClass] != null && itemId == equipment[itemClass][1]) {
+                    changeEquipment(itemId)
+                }
+            }
+            delete inventoryNonStackable[itemId]
+            document.getElementById(`item-${item}_${itemId}`).remove()
         }
     }
+
     if (amount > 0) {
-        insertLog(`Obtained ${colorGen("#ccccff", `x${amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
+        insertLog(`Obtained ${genItemLogText(item, amount)}`, [itemData[item]['name'], itemData[item]['desc']])
     } else if (announceReduction == true) {
-        insertLog(`Used ${colorGen("#ccccff", `x${-amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
+        insertLog(`Used ${genItemLogText(item, amount)}`, [itemData[item]['name'], itemData[item]['desc']])
     }
+
     if (itemData[item]['weight']) {
         const maxWeight = getMaxWeight()
         inventoryWeight += itemData[item]['weight'] * amount
@@ -631,40 +731,34 @@ function changeInventory(item, amount, announceReduction=false) {
     }
 }
 
-function changeStorage(item, amount) {
-    if (storage[item] == undefined) {
-        if (amount <= 0) {return false}
-        storage[item] = amount
-        const itemParent = document.createElement("div")
-        itemParent.className = "item-parent"
-        itemParent.id = `storage-item-${item}`
-        itemParent.setAttribute("data-tooltip-title", itemData[item]['name'])
-        itemParent.setAttribute("data-tooltip-text", itemData[item]['desc'])
-
-        const itemText = document.createElement("span")
-        itemText.className = "item-text"
-        itemText.textContent = itemData[item]['name']
-
-        const itemQuantity = document.createElement("span")
-        itemQuantity.className = "item-quantity"
-        itemQuantity.textContent = `x${storage[item]}`
-
-        itemParent.appendChild(itemText)
-        itemParent.appendChild(itemQuantity)
-        document.getElementById("storage-table").appendChild(itemParent)
-    } else {
-        if (storage[item] + amount < 0) {return false}
-        storage[item] += amount
-
-        if (storage[item] == 0) {
-            delete storage[item]
-            document.getElementById(`storage-item-${item}`).remove()
+function changeStorage(item, amount, itemId=null, newItemData=null) {
+    if (itemData[item]['stackable'] !== false) {
+        if (storage[item] == undefined) {
+            if (amount <= 0) {return false}
+            storage[item] = amount
+            createItemDiv(item, "storage")
         } else {
-            document.getElementById(`storage-item-${item}`).getElementsByClassName("item-quantity")[0].textContent = `x${storage[item]}`
+            if (storage[item] + amount < 0) {return false}
+            storage[item] += amount
+
+            if (storage[item] == 0) {
+                delete storage[item]
+                document.getElementById(`storage-item-${item}`).remove()
+            } else {
+                document.getElementById(`storage-item-${item}`).getElementsByClassName("item-quantity")[0].textContent = `x${storage[item]}`
+            }
+        }
+    } else {
+        if (amount == 1) {
+            storageNonStackable[itemId] = newItemData
+            createItemDiv(item, "storage", false, itemId)
+        } else {
+            delete storageNonStackable[itemId]
+            document.getElementById(`storage-item-${item}_${itemId}`).remove()
         }
     }
     if (amount > 0) {
-        insertLog(`Deposited ${colorGen("#ccccff", `x${amount}`)} ${itemData[item]['name']}`, [itemData[item]['name'], itemData[item]['desc']])
+        insertLog(`Deposited ${genItemLogText(item, amount)}`, [itemData[item]['name'], itemData[item]['desc']])
     }
 }
 
@@ -691,6 +785,7 @@ function getSkillLevel(skill) {
 
 function itemClickDetector(e, storage=false) {
     let item = null
+    let itemId = null
     if (storage == false) {
         if (e.target.id.startsWith("item-")) {
             item = e.target.id.replace("item-", "")
@@ -705,13 +800,19 @@ function itemClickDetector(e, storage=false) {
         }
     }
 
+    if (item.split("_").length == 2) {
+        [item, itemId] = item.split("_")
+    }
+
     if (item != null) {
         if (storage == false) {
-            changeInventory(item, -1)
-            changeStorage(item, 1)
+            const newItemData = inventoryNonStackable[itemId]
+            changeInventory(item, -1, false, itemId)
+            changeStorage(item, 1, itemId, newItemData)
         } else if (storage == true) {
-            changeStorage(item, -1)
-            changeInventory(item, 1)
+            const newItemData = storageNonStackable[itemId]
+            changeStorage(item, -1, itemId)
+            changeInventory(item, 1, false, itemId, newItemData)
         }
     }
 }
@@ -791,13 +892,13 @@ function changeEffect(effect, enable=true, duration=0) {
             if (duration == 0) {
                 div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
             } else {
-                div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}\nEnds: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
+                div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
             }
 
             document.getElementById("effects-bar").appendChild(div)
         } else if (duration != 0) {
             effects[effect] += duration
-            document.getElementById(`effect-${effect}`).setAttribute("data-tooltip-text", `${effectData[effect]['desc']}\nEnds: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
+            document.getElementById(`effect-${effect}`).setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
         }
     } else {
         if (effects[effect] != undefined) {
@@ -1003,8 +1104,8 @@ function generateShop(shopName) {
         for (const item of shopData[shopName]) {
             if (Math.random() < item['chance'] / 100) {
                 shopItems[item['name']] = {
-                    "price": randomRange(item['price'][0], item['price'][1], true),
-                    "quantity": randomRange(item['quantity'][0], item['quantity'][1], true)
+                    "price": randomRange(item['price'][0], item['price'][1], 0),
+                    "quantity": randomRange(item['quantity'][0], item['quantity'][1], 0)
                 }
             }
         }
@@ -1136,13 +1237,21 @@ function generateCraftingMenu() {
 function changeMoney(amount) {
     money += amount
     if (amount > 0) {
-        insertLog(`Obtained ${colorGen("#cccc55", `$${amount}`)}`)
+        insertLog(`Obtained ${colorGen("#cccc55", `$${formatNumber(amount)}`)}`)
     }
-    document.getElementById("inventory-money").textContent = `$${money}`
+    document.getElementById("inventory-money").textContent = `$${formatNumber(money)}`
 }
 
 function getCraftingSpeed() {
     return 1 + (0.05 * getSkillLevel("crafting"))
+}
+
+function getExploreSpeed() {
+    return 1 + (0.05 * getSkillLevel("exploration"))
+}
+
+function getEquipmentStats(type) {
+    return inventoryNonStackable[equipment[type][1]]
 }
 
 const sceneTicks = new Map([
@@ -1205,7 +1314,7 @@ const sceneTicks = new Map([
         changeBattlestat("dex", gyms['nextLevel']['dex'])
         changeSkill("training", 1)
         changeEnergy(-0.2)
-    }],
+    }]
 ])
 
 const effectFunctions = new Map([
@@ -1213,6 +1322,16 @@ const effectFunctions = new Map([
         changeEnergy(-0.1)
     }]
 ])
+
+const explorePools = {
+    "parkExplore": {
+        "difficulty": [10, 15],
+        "loot": {
+            "grass": 4,
+            "woodenStick": 1
+        }
+    }
+}
 
 function tick() {
     stats['playtime'] += 1
@@ -1252,6 +1371,20 @@ function tick() {
         }
     }
 
+    if (explorePools[currentScene] != null) {
+        if (exploreData['area'] == null || exploreData['area'] != currentScene) {
+            exploreData['area'] = currentScene
+            exploreData['goal'] = randomRange(explorePools[currentScene]['difficulty'][0], explorePools[currentScene]['difficulty'][1], 0)
+        }
+        exploreData['completed'] += getExploreSpeed()
+        changeSkill("exploration", 1)
+        if (exploreData['completed'] >= exploreData['goal']) {
+            exploreData['completed'] = 0
+            exploreData['goal'] = randomRange(explorePools[currentScene]['difficulty'][0], explorePools[currentScene]['difficulty'][1], 0)
+            changeInventory(getRandomLoot(explorePools[currentScene]['loot']), 1)
+        }
+    }
+
     for (const [effect, value] of Object.entries(effects)) {
         if (Number.isInteger(value)) {
             if (value <= time) {
@@ -1271,6 +1404,7 @@ function tick() {
 
             let turnDmg = getBaseDamage(effectiveStats['str']) * (Math.random() * 0.4 + 0.8)
             turnDmg = turnDmg * (1 + getSkillLevel("fighting") * 0.05)
+            if (equipment['weapon']) {turnDmg = turnDmg * getEquipmentStats("weapon")['damage']}
 
             const turnDmgMitigation = calcDamageMitigation(effectiveStats['str'], enemyStats['def'])
             const turnHitChance = calcHitChance(effectiveStats['spd'], enemyStats['dex'])
@@ -1279,6 +1413,16 @@ function tick() {
             if (turnHitChance / 100 > Math.random()) {
                 insertLog(`You -> ${colorGen("#ff3333", turnActualDmg)}`)
                 combatData['enemyHealth'] -= turnActualDmg
+                if (equipment['weapon']) {
+                    getEquipmentStats("weapon")['durability'] -= 1
+                    if (getEquipmentStats("weapon")['durability'] <= 0) {
+                        const item = equipment['weapon'][0]
+                        const itemId = equipment['weapon'][1]
+                        insertLog(`${genItemLogText(item, null)} broke`, [itemData[item]['name'], itemData[item]['desc']])
+                        changeEquipment(itemId)
+                        changeInventory(item, -1, false, itemId)
+                    }
+                }
             } else {
                 insertLog(colorGen("#aaaaaa", "You missed"))
             }
@@ -1331,6 +1475,8 @@ function tick() {
     // updateBar("xp") No longer needed as changexp function updates it
     // updateStats() No longer needed as changestat function updates it
 
+    updateTooltip()
+
     document.getElementById("center-top").textContent = formatTime(time)
 }
 
@@ -1354,27 +1500,37 @@ for (const elem of document.getElementById("menu-buttons-holder").children) {
 
 let activeTarget = null
 
+function updateTooltip() {
+    if (activeTarget) {
+        const tooltipTitle = activeTarget.getAttribute("data-tooltip-title")
+        let tooltipText = activeTarget.getAttribute("data-tooltip-text")
+        const tooltipSpecial = activeTarget.getAttribute("data-tooltip-special")
+        if (tooltipSpecial == "equipment") {
+            const [item, itemId] = activeTarget.id.replace("item-", "").split("_")
+            const tooltipItemData = inventoryNonStackable[itemId] || storageNonStackable[itemId]
+            if (tooltipItemData != undefined) {
+                tooltipText += `<hr>Dmg: ${colorGen("#ff0000", tooltipItemData['damage'])}`
+                tooltipText += `\nDurability: ${colorGen("#ffff00", tooltipItemData['durability'])}`
+            }
+        }
+
+        document.getElementById("tooltip-title").textContent = tooltipTitle
+
+        if (tooltipText != undefined && tooltipText.includes("<")) {
+            document.getElementById("tooltip-text").innerHTML = tooltipText
+        } else {
+            document.getElementById("tooltip-text").textContent = tooltipText
+        }
+    }
+}
+
 document.addEventListener("mouseover", function(e) {
-    // if (tooltipTitle == undefined) {
-    //     if (e.target.parentElement != undefined) {
-    //         tooltipTitle = e.target.parentElement.getAttribute("data-tooltip-title")
-    //         tooltipText = e.target.parentElement.getAttribute("data-tooltip-text")
-    //     }
-    //     if (tooltipTitle == undefined) {
-    //         return
-    //     }
-    // }
     const elem = e.target.closest("[data-tooltip-title]")
     if (!elem) return
-    const tooltipTitle = elem.getAttribute("data-tooltip-title")
-    const tooltipText = elem.getAttribute("data-tooltip-text")
+    
     activeTarget = elem
-    document.getElementById("tooltip-title").textContent = tooltipTitle
-    if (tooltipText != undefined && tooltipText.includes("<")) {
-        document.getElementById("tooltip-text").innerHTML = tooltipText
-    } else {
-        document.getElementById("tooltip-text").textContent = tooltipText
-    }
+    updateTooltip()
+
     const tooltip = document.getElementById("tooltip")
     const offset = 14
 
@@ -1428,12 +1584,43 @@ document.addEventListener("mousemove", function (e) {
     tooltip.style.top = `${top}px`
 })
 
+function changeEquipment(itemId) {
+    const item = inventoryNonStackable[itemId]['name']
+    const equipmentElem = document.getElementById(`equipment-${itemData[item]['combat']['class']}`)
+    const itemClass = itemData[item]['combat']['class']
+    if (equipment[itemClass] == null || itemId != equipment[itemClass][1]) {
+        if (equipment[itemClass] != null && itemId != equipment[itemClass][1]) {
+            document.getElementById(`item-${equipment[itemClass][0]}_${equipment[itemClass][1]}`).querySelector(".item-equipped").remove()
+        }
+        equipment[itemClass] = [item, itemId]
+        equipmentElem.textContent = itemData[item]['name']
+        equipmentElem.style.color = "#ffffff"
+        const inventorySlot = document.getElementById(`item-${item}_${itemId}`)
+        if (inventorySlot) {
+            const itemEquipped = document.createElement("span")
+            itemEquipped.className = "item-equipped"
+            itemEquipped.textContent = "E"
+
+            inventorySlot.appendChild(itemEquipped)
+        }
+    } else {
+        equipment[itemData[item]['combat']['class']] = null
+        equipmentElem.textContent = equipmentElem.getAttribute("data-tooltip-title")
+        equipmentElem.style.color = ""
+
+        document.getElementById(`item-${item}_${itemId}`).querySelector(".item-equipped").remove()
+    }
+}
+
 document.getElementById("inventory-table").addEventListener("click", function(e) {
-    let item = e.target.closest("[id^=\"item-\"]").id.replace("item-", "")
+    if (storageAccess) {return}
+    let [item, itemId] = e.target.closest("[id^=\"item-\"]").id.replace("item-", "").split("_")
     if (item != null) {
         if (itemData[item]['execute']) {
             itemData[item]['execute']()
             changeInventory(item, -1, true)
+        } else if (itemData[item]['combat']) {
+            changeEquipment(itemId)
         }
     }
 })
@@ -1508,7 +1695,7 @@ class scenes {
     }
 
     static townCenter() {
-        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Hospital|hospital}\n{Merchant|merchant}\n\n{Alley|alley}\n\n{Housing Area|housingArea|250}`
+        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Hospital|hospital}\n{Merchant|merchant}\n\n{Alley|alley}\n\n{Housing Area|housingArea|250}\n{Town North|townNorth|250}`
     }
 
     static noticeBoard() {
@@ -1674,6 +1861,18 @@ class scenes {
         } else {
             return `"Would you like to sell all your straw baskets for a total of ${colorGen("#cccc55", `$${inventory['strawBasket'] * 5}`)}?"\n\n{Yes|merchant|0|merchantSell}\n\n{Return|merchant}`
         }
+    }
+
+    static townNorth() {
+        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{Park|park}\n\n{Town Center|townCenter|250}`
+    }
+
+    static park() {
+        return `You are in the park. Various trees and plants are scattered around.\n\n{Explore|parkExplore}\n\n{Leave|townNorth}`
+    }
+
+    static parkExplore() {
+        return `You are searching for valuable objects in the park.\n\n{Stop|park}`
     }
 }
 

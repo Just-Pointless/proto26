@@ -167,7 +167,10 @@ body {
 }
 
 .item-complexity {
-    color: #ffaa55
+    color: #ffaa55;
+}
+.item-equipped {
+    color: #00cccc;
 }
 
 #skill-table {
@@ -223,6 +226,33 @@ body {
     top: 40px;
     bottom: 0;
     left: 5px;
+}
+
+#inventory-table {
+    max-height: calc(100% - 140px);
+    overflow-y: auto;
+    scrollbar-color: #555555 #333333;
+    scrollbar-width: thin;
+}
+
+#equipment-holder {
+    position: absolute;
+    background-color: #333344;
+    bottom: 0;
+    height: fit-content;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+
+.equipment-item {
+    border: 2px solid #444499;
+    text-align: center;
+    font-size: 16px;
+    height: 24px;
+    line-height: 24px;
+    color: #aaaaaa;
 }
 
 .sidebar-menu-title {
@@ -376,7 +406,9 @@ body {
     bottom: 20px;
     width: 300px;
     color: #ffffff;
-    overflow-y: scroll;
+    overflow-y: auto;
+    scrollbar-color: #555555 #333333;
+    scrollbar-width: thin;
 }
 
 .log-entry {
