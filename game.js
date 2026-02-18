@@ -1,4 +1,4 @@
-const VERSION = "0.7"
+const VERSION = "0.8"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -6,6 +6,7 @@ var money = 0
 var time = 420
 var oldScene = ""
 var currentScene = ""
+var sceneText = ""
 var health = 10
 var xp = 0
 var title = "Unknown"
@@ -876,13 +877,17 @@ function changeTime(amount) {
     // }
 }
 
-function changeEffect(effect, enable=true, duration=0) {
+function changeEffect(effect, enable=true, duration=0, absolute=false) {
     if (enable == true) {
         if (effects[effect] == undefined) {
             if (duration == 0) {
                 effects[effect] = true
             } else {
-                effects[effect] = duration + time
+                if (absolute == false) {
+                    effects[effect] = duration + time
+                } else {
+                    effects[effect] = duration
+                }
             }
             const div = document.createElement("div")
             div.className = "effect-icon"
@@ -897,7 +902,11 @@ function changeEffect(effect, enable=true, duration=0) {
 
             document.getElementById("effects-bar").appendChild(div)
         } else if (duration != 0) {
-            effects[effect] += duration
+            if (absolute == false) {
+                effects[effect] += duration
+            } else {
+                effects[effect] = duration
+            }
             document.getElementById(`effect-${effect}`).setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
         }
     } else {
@@ -1010,6 +1019,8 @@ function giveQuest(questName) {
             "goals": nonLifetime
         }
         insertLog(`Received Quest: ${colorGen("#ffff00", `"${questData[questName]['name']}"`)}`)
+    }
+    if (document.getElementById(`quest-${questName}`) == undefined) {
         if (document.getElementById("quests-button").style.display == "none") {
             document.getElementById("quests-button").style.display = ""
         }
@@ -1228,6 +1239,7 @@ function generateCraftingMenu() {
             craftInfo['completed'] = 0
             craftInfo['goal'] = itemData[item]['crafting']['complexity']
             craftInfo['recipe'] = item
+            sceneManager("empty")
             processText(`You are crafting "${itemData[item]['name']}". You'll finish at ${colorGen("#CCCCFF", formatTime(arrival, true))}`)
             playTransition()
         }
@@ -1481,6 +1493,12 @@ function tick() {
 }
 
 setInterval(tick, 1000)
+setInterval(function() {
+    if (currentScene != "intro1") {
+        saveToLocal(makeSave())
+        document.getElementById("last-save").textContent = `Last Save: ${new Date().toLocaleTimeString()}`
+    }
+}, 10000)
 
 for (const elem of document.getElementById("menu-buttons-holder").children) {
     elem.addEventListener("click", function() {
@@ -1629,7 +1647,17 @@ function getTotalBattlestats() {
     return battleStats['str'] + battleStats['def'] + battleStats['spd'] + battleStats['dex']
 }
 
+function changeTitle(newTitle) {
+    title = newTitle
+    document.getElementById("title").textContent = title
+    insertLog(`Title Changed: ${colorGen("#dd8833", `"${title}"`)}`)
+}
+
 class scenes {
+    static empty() {
+        return ``
+    }
+
     static intro1() {
         return `"Hello?"\n\n{Next|intro2}`
     }
@@ -1663,9 +1691,7 @@ class scenes {
     }
 
     static intro9() {
-        title = "Newcomer"
-        document.getElementById("title").textContent = title
-        insertLog(`Title Changed: ${colorGen("#dd8833", `"${title}"`)}`)
+        changeTitle("Newcomer")
         return `The house is small.\n\nThin walls. Wooden floor. One bed. One table.\n\n"It's yours. Nothing much but it's better than nothing."\n\n{Next|intro10}`
     }
 
@@ -1902,6 +1928,7 @@ class sceneEndFunctions {
 }
 
 function processText(text) {
+    sceneText = text
     while (document.getElementById("main").lastChild) {
         document.getElementById("main").removeChild(document.getElementById("main").lastChild)
     }
@@ -1957,14 +1984,176 @@ function processText(text) {
 }
 
 function sceneManager(selected) {
-    var selectedScene = scenes[selected]()
+    const selectedScene = scenes[selected]()
     processText(selectedScene)
     if (sceneEndFunctions[selected]) {sceneEndFunctions[selected]()}
     oldScene = currentScene
     currentScene = selected
 }
 
-sceneManager("intro1")
+function makeSave() {
+    let base = {
+        money, time, health, xp, title, battleStats, skills, energy, noSleepTime, effects, // Stats
+        inventory, inventoryNonStackable, inventoryNonStackableIncrement, storage, storageNonStackable, storageAccess, shopStorage, // Inventory
+        combatData, equipment, team, // Combat
+        oldScene, currentScene, sceneText, // Scenes
+        quests, completedQuests, checks, // Quests
+        stats, // Stats
+        knownRecipes, craftInfo, // Crafting
+        exploreData, travelInfo, // Exploration
+    }
+    return base
+}
+
+function saveToLocal(dict, slot="save1") {
+    const msgpackData = MessagePack.encode(dict)
+    const packed = LZString.compressToBase64(String.fromCharCode.apply(null, msgpackData))
+    window.localStorage.setItem(slot, packed)
+}
+
+function exportDict(dict, filename="proto26.sav") {
+    const msgpackData = MessagePack.encode(dict)
+    const packed = LZString.compressToUint8Array(String.fromCharCode.apply(null, msgpackData))
+    const blob = new Blob([packed], {type: "application/octet-stream"})
+
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+}
+
+async function importDict() {
+    const [fileHandle] = await window.showOpenFilePicker({
+        types: [{description: "Proto26 Save", accept: {"application/octet-stream": [".sav"]}}]
+    })
+    const file = await fileHandle.getFile()
+    const arrayBuffer = await file.arrayBuffer()
+    const compressed = new Uint8Array(arrayBuffer)
+    const str = LZString.decompressFromUint8Array(compressed)
+    const bytes = new Uint8Array(str.split("").map(c => c.charCodeAt(0)))
+    const dict = MessagePack.decode(bytes)
+    return dict
+}
+
+function loadFromLocal(slot="save1") {
+    const save = window.localStorage.getItem(slot)
+    const decompressed = LZString.decompressFromBase64(save)
+    const bytes = new Uint8Array(decompressed.split('').map(char => char.charCodeAt(0)))
+    const dict = MessagePack.decode(bytes)
+    return dict
+}
+
+function loadSave(dict) {
+    ({
+        money, time, battleStats, energy, noSleepTime, // Stats
+        inventoryNonStackableIncrement, shopStorage, // Inventory
+        combatData, team, // Combat
+        oldScene, currentScene, sceneText, // Scenes
+        quests, completedQuests, checks, // Quests
+        stats, // Stats
+        knownRecipes, craftInfo, // Crafting
+        exploreData, travelInfo, // Exploration
+    } = dict)
+
+    processText(sceneText)
+    if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
+
+    for (const [item, amount] of Object.entries(dict['inventory'])) {
+        changeInventory(item, amount)
+    }
+    for (const [item, amount] of Object.entries(dict['storage'])) {
+        changeStorage(item, amount)
+    }
+
+    for (const [id, data] of Object.entries(dict['inventoryNonStackable'])) {
+        const item = data['name']
+        changeInventory(item, 1, false, id, data)
+    }
+    for (const [id, data] of Object.entries(dict['storageNonStackable'])) {
+        const item = data['name']
+        changeStorage(item, 1, id, data)
+    }
+
+    for (const [item, data] of Object.entries(dict['equipment'])) {
+        if (data != null) {
+            changeEquipment(data[1])
+        }
+    }
+
+    for (const [skill, xp] of Object.entries(dict['skills'])) {
+        changeSkill(skill, xp)
+    }
+
+    for (const [effect, time] of Object.entries(dict['effects'])) {
+        changeEffect(effect, true, time, true)
+    }
+
+    // Enemy loading
+    if (combatData['enemy'] != null) {
+        const statTypes = ["str", "def", "spd", "dex"]
+        for (const stat of statTypes) {
+            document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
+        }
+
+        document.getElementById("enemy-name").textContent = enemyData[combatData['enemy']]['name']
+        updateBar("enemyHealth")
+
+        document.getElementById("attack-info-left").style.display = ""
+        document.getElementById("attack-info-divider").style.display = ""
+        document.getElementById("attack-info-right").style.display = ""
+    }
+
+    for (const quest in dict['quests']) {
+        giveQuest(quest)
+    }
+
+    changeXp(dict['xp'])
+    health = dict['health']
+    updateBar("health")
+    updateBar("energy")
+    document.getElementById("center-top").textContent = formatTime(time)
+
+    if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
+    if (dict['title'] != "Unknown") {changeTitle(dict['title'])}
+
+    document.getElementById("log").replaceChildren()
+}
+
+document.getElementById("delete-save").addEventListener("click", function() {
+    let confirm = prompt("THIS WILL DELETE YOUR SAVE. TYPE CONFIRM TO CONFIRM")
+    if (confirm.toLowerCase() == "confirm") {
+        localStorage.removeItem("save1")
+        window.location.reload()
+    }
+})
+
+document.getElementById("export").addEventListener("click", function() {
+    exportDict(makeSave())
+})
+
+document.getElementById("import").addEventListener("click", function() {
+    importDict().then(dict => {
+        saveToLocal(dict, "savetemp")
+        window.location.reload()
+    })
+})
+if (localStorage.getItem("savetemp") == undefined) {
+    if (localStorage.getItem("save1") == undefined) {
+        sceneManager("intro1")
+    } else {
+        loadSave(loadFromLocal())
+    }
+} else {
+    loadSave(loadFromLocal("savetemp"))
+    localStorage.removeItem("savetemp")
+}
+
+window.addEventListener("beforeunload", function() {
+    saveToLocal(makeSave())
+})
+
 updateBar("health")
 updateBar("xp")
 updateBattlestats()

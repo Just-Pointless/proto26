@@ -205,6 +205,7 @@ body {
 }
 
 #menu-buttons-holder {
+    margin-top: 10px;
     text-align: center;
 }
 
@@ -350,17 +351,42 @@ body {
     height: 100%;
 }
 
-#game-title {
-    text-align: center;
-    font-size: 16px;
-}
-
 #bottombar {
-    background-color: #777777;
+    background-color: #999999;
     position: fixed;
     bottom: 0;
     width: 100%;
     height: 20px;
+    display: flex;
+}
+
+#game-title {
+    font-size: 16px;
+}
+
+#bottombar-right {
+    margin-left: auto;
+}
+
+.bottombar-text {
+    font-size: 14px;
+    display: inline;
+    border: 1px solid #000000;
+    padding-inline: 6px;
+    padding-block: 1px;
+}
+
+.bottombar-button {
+    border: 1px solid #000000;
+    background: 0;
+    padding-inline: 6px;
+    padding-block: 1px;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+.bottombar-button:hover {
+    background-color: #888888;
 }
 
 #attack-info {

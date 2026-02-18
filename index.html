@@ -3,6 +3,8 @@
 <head>
     <title>Proto26</title>
     <script src="game.js" defer></script>
+    <script src="msgpack.js"></script>
+    <script src="lz-string.js"></script>
     <link rel="stylesheet" href="main.css">
     <meta name="viewport" content="width=1200">
     <meta charset="utf-8">
@@ -43,7 +45,6 @@
         </div>
     </div>
     <div id="sidebar">
-        <div id="game-title">Proto26 v?</div>
         <div id="menu-buttons-holder">
             <button class="menu-button" id="inventory-button" style="border-color: #7777cc;">Inventory</button>
             <button class="menu-button" id="skills-button">Skills</button>
@@ -85,7 +86,15 @@
             <div id="quests-table"></div>
         </div>
     </div>
-    <div id="bottombar"></div>
+    <div id="bottombar">
+        <div id="game-title">Proto26 v?</div>
+        <div id="bottombar-right">
+            <div class="bottombar-text" id="last-save">Last Save: Never</div>
+            <button class="bottombar-button" id="delete-save">Delete</button>
+            <button class="bottombar-button" id="export">Export</button>
+            <button class="bottombar-button" id="import">Import</button>
+        </div>
+    </div>
     <div id="attack-info">
         <div id="attack-info-left" style="display: none;">
             <div id="enemy-name">Unknown Enemy</div>
