@@ -56,6 +56,7 @@ body {
     font-size: 20px;
     display: inline;
     cursor: pointer;
+    font-family: monospace;
 }
 
 .main-link:hover {
@@ -77,11 +78,10 @@ body {
     color: #ffffff;
     font-size: 16px;
     max-width: 300px;
-    border: 1px solid #555555;
-    border-left: 2px solid #555555;
-    border-right: 2px solid #555555;
-    background-color: #333333;
     margin-top: 20px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
 }
 
 #sidebar {
@@ -93,11 +93,22 @@ body {
     color: #ffffff;
 }
 
-#inventory-table, #storage-table, #quests-table {
+#inventory-table, #storage-table, #quests-table, #completed-quests-table {
     border: 1px solid #555555;
     border-left: 2px solid #555555;
     border-right: 2px solid #555555;
     font-size: 16px;
+}
+
+#quests-table, #completed-quests-table {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    border: 0;
+}
+
+#completed-quests-header {
+    margin-top: 20px;
 }
 
 #inventory-holder {
@@ -132,14 +143,14 @@ body {
 .crafting-item-parent {
     width: 100%;
     min-height: 20px;
-    border-top: 1px solid #555555;
-    border-bottom: 1px solid #555555;
+    border: 2px solid #555555;
     line-height: 20px;
 }
 
 .crafting-item-holder {
     height: 20px;
     border-bottom: 1px solid #555555;
+    background-color: #333333;
 }
 
 .crafting-item-requirements {
@@ -169,8 +180,13 @@ body {
 .item-complexity {
     color: #ffaa55;
 }
+
 .item-equipped {
     color: #00cccc;
+}
+
+.item-selected {
+    color: #cc00cc;
 }
 
 #skill-table {
@@ -188,8 +204,7 @@ body {
 
 .quest-parent {
     width: 100%;
-    border-top: 1px solid #555555;
-    border-bottom: 1px solid #555555;
+    border: 2px solid #555555;
     font-size: 14px;
 }
 

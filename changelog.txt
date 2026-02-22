@@ -1,3 +1,18 @@
+v0.9
+- Improve quests view
+- Show completed quests
+- Fix ends display for infinite effects
+- Add two new weapons
+- Add weapon store
+- Add new crafting recipe
+- Move save load scene logic to end
+- Update crafting system for nonstackable items
+- Fix delete data button
+- Fix incorrect font for links
+- Lowercase time hex color
+- Fix error when clicking outside crafting box
+- Allow cancelling of crafting
+
 v0.8
 - Implement saving
 - Add empty scene

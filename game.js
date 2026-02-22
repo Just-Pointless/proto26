@@ -1,4 +1,4 @@
-const VERSION = "0.8"
+const VERSION = "0.9"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -56,11 +56,14 @@ var stats = {
     "timeSlept": 0
 }
 var shopStorage = {}
-var knownRecipes = ["strawBasket"]
+var knownRecipes = ["strawBasket", "woodenSpear"]
 var craftInfo = {
     "recipe": null,
     "goal": 0,
-    "completed": 0
+    "completed": 0,
+    "required": {},
+    "using": [],
+    "selected": null
 }
 var team = "none"
 var equipment = {
@@ -78,6 +81,8 @@ var exploreData = {
     "goal": 0,
     "completed": 0
 }
+var saveEnabled = true
+var craftingSelection = false
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -168,6 +173,7 @@ const itemData = {
         "name": "Wooden Stick",
         "desc": "A blunt wooden stick. Barely better than your fists",
         "class": "gear",
+        "subclass": "club",
         "weight": 120,
         "durability": [80, 120],
         "stackable": false,
@@ -181,6 +187,39 @@ const itemData = {
         "desc": "Can be used to make healing potions",
         "class": "misc",
         "weight": 0.2
+    },
+    "woodenSpear": {
+        "name": "Wooden Spear",
+        "desc": "A pointy wooden stick, more durable and does more damage",
+        "class": "gear",
+        "subclass": "spear",
+        "weight": 100,
+        "durability": [200, 300],
+        "stackable": false,
+        "combat": {
+            "class": "weapon",
+            "damage": [1.4, 1.5]
+        },
+        "crafting": {
+            "complexity": 30,
+            "materials": {
+                "woodenStick": 1,
+                "knife": 0
+            }
+        }
+    },
+    "knife": {
+        "name": "Knife",
+        "desc": "A basic knife made out of stone",
+        "class": "gear",
+        "subclass": "knife",
+        "weight": 300,
+        "durability": [800, 1200],
+        "stackable": false,
+        "combat": {
+            "class": "weapon",
+            "damage": [1.5, 1.7]
+        }
     }
 }
 const effectData = {
@@ -894,7 +933,7 @@ function changeEffect(effect, enable=true, duration=0, absolute=false) {
             div.id = `effect-${effect}`
             div.style.backgroundColor = effectData[effect]['color']
             div.setAttribute("data-tooltip-title", effectData[effect]['name'])
-            if (duration == 0) {
+            if (duration == 0 || duration == true) {
                 div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
             } else {
                 div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
@@ -996,11 +1035,14 @@ function checkCompletion(questName) {
     if (questData[questName]['repeatable'] == false) {
         completedQuests.push(questName)
     }
-    document.getElementById(`quest-${questName}`).remove()
+    document.getElementById("completed-quests-table").appendChild(document.getElementById(`quest-${questName}`))
+    document.getElementById(`quest-${questName}`).getElementsByClassName("quest-title")[0].style.color = "#ffff00"
+    document.getElementById("completed-quests-table").style.display = ""
+    document.getElementById("completed-quests-header").style.display = ""
 }
 
-function giveQuest(questName) {
-    if (!quests[questName]) {
+function giveQuest(questName, complete=false) {
+    if (!quests[questName] && complete == false) {
         nonLifetime = {}
         for (const [type, values] of Object.entries(questData[questName]['goals'])) {
             for (const [stat, data] of Object.entries(values)) {
@@ -1056,9 +1098,14 @@ function giveQuest(questName) {
 
                 const goalProgress = document.createElement("span")
                 goalProgress.className = "quest-goal-progress"
-                goalProgress.style.color = data['completion'] < data['amount'] ? "#ff0000" : "#00ff00"
                 goalProgress.id = `quest-${questName}-${stat}`
-                goalProgress.textContent = `${formatNumber(data['completion'])}/${data['amount']}`
+                if (complete == false) {
+                    goalProgress.style.color = data['completion'] < data['amount'] ? "#ff0000" : "#00ff00"
+                    goalProgress.textContent = `${formatNumber(data['completion'])}/${data['amount']}`
+                } else {
+                    goalProgress.style.color = "#00ff00"
+                    goalProgress.textContent = `${formatNumber(data['amount'])}/${data['amount']}`
+                }
                 
                 questGoals.appendChild(goalParent)
                 goalParent.appendChild(goal)
@@ -1071,7 +1118,14 @@ function giveQuest(questName) {
         questParent.appendChild(questGoals)
         document.getElementById("quests-table").appendChild(questParent)
 
-        checkCompletion(questName)
+        if (complete == false) {
+            checkCompletion(questName)
+        } else {
+            document.getElementById("completed-quests-table").appendChild(document.getElementById(`quest-${questName}`))
+            document.getElementById(`quest-${questName}`).getElementsByClassName("quest-title")[0].style.color = "#ffff00"
+            document.getElementById("completed-quests-table").style.display = ""
+            document.getElementById("completed-quests-header").style.display = ""
+        }
     }
 }
 
@@ -1187,6 +1241,11 @@ function generateCraftingMenu() {
     craftingHolder.className = "crafting-holder"
     document.getElementById("main").appendChild(craftingHolder)
 
+    let nonstackableCounts = {}
+    for (const item of Object.values(inventoryNonStackable)) {
+        nonstackableCounts[item['name']] = (nonstackableCounts[item['name']] ?? 0) + 1
+    }
+
     for (const item of knownRecipes) {
         const itemParent = document.createElement("div")
         itemParent.className = "crafting-item-parent"
@@ -1208,14 +1267,28 @@ function generateCraftingMenu() {
         const requirementsHolder = document.createElement("div")
         requirementsHolder.className = "crafting-item-requirements"
 
+        let i = 0
+        const totalItems = Object.keys(itemData[item]['crafting']['materials']).length
         for (const [craftingItem, amount] of Object.entries(itemData[item]['crafting']['materials'])) {
             const materialElement = document.createElement("span")
-            materialElement.textContent = `x${amount} ${itemData[craftingItem]['name']}`
-            if (inventory[craftingItem] >= amount) {
+            if (amount >= 1) {
+                materialElement.textContent = `x${amount} ${itemData[craftingItem]['name']}`
+            } else {
+                materialElement.textContent = `${itemData[craftingItem]['name']} Required`
+            }
+            if (inventory[craftingItem] >= amount || nonstackableCounts[craftingItem] >= amount) {
                 materialElement.style.color = "#aaffaa"
             }
 
             requirementsHolder.appendChild(materialElement)
+
+            if (i < totalItems - 1) {
+                const dividerElement = document.createElement("span")
+                dividerElement.textContent = `, `
+                requirementsHolder.appendChild(dividerElement)
+            }
+
+            i += 1
         }
 
         itemHolder.appendChild(itemText)
@@ -1226,22 +1299,43 @@ function generateCraftingMenu() {
     }
 
     craftingHolder.addEventListener("click", function(e) {
-        let item = e.target.closest("[id^=\"crafting-item-\"]").id.replace("crafting-item-", "")
+        let item = e.target.closest("[id^=\"crafting-item-\"]")?.id?.replace("crafting-item-", "")
         if (item != null) {
+            let nonstackablesRequired = {}
             for (const [craftingItem, amount] of Object.entries(itemData[item]['crafting']['materials'])) {
-                if (inventory[craftingItem] < amount || inventory[craftingItem] == undefined) {
-                    insertLog(colorGen("#aaaaaa", "Missing materials"))
-                    return
+                if (itemData[craftingItem]['stackable'] == true) {
+                    if (inventory[craftingItem] < amount || inventory[craftingItem] == undefined) {
+                        insertLog(colorGen("#aaaaaa", "Missing materials"))
+                        return
+                    }
+                } else {
+                    if (nonstackableCounts[craftingItem] < amount || nonstackableCounts[craftingItem] == undefined) {
+                        insertLog(colorGen("#aaaaaa", "Missing materials"))
+                        return
+                    }
+                    if (amount >= 1) {
+                        nonstackablesRequired[craftingItem] = amount
+                    }
                 }
             }
 
-            let arrival = Math.ceil(time + itemData[item]['crafting']['complexity'] / getCraftingSpeed())
-            craftInfo['completed'] = 0
-            craftInfo['goal'] = itemData[item]['crafting']['complexity']
-            craftInfo['recipe'] = item
-            sceneManager("empty")
-            processText(`You are crafting "${itemData[item]['name']}". You'll finish at ${colorGen("#CCCCFF", formatTime(arrival, true))}`)
-            playTransition()
+            let outputString = Object.entries(nonstackablesRequired).map(([item, amount]) => `- x${amount} ${itemData[item]['name']}`).join("\n")
+            if (Object.keys(nonstackablesRequired).length == 0) {
+                let arrival = Math.ceil(time + itemData[item]['crafting']['complexity'] / getCraftingSpeed())
+                craftInfo['completed'] = 0
+                craftInfo['goal'] = itemData[item]['crafting']['complexity']
+                craftInfo['recipe'] = item
+                sceneManager("empty")
+                processText(`You are crafting "${itemData[item]['name']}". You'll finish at ${colorGen("#ccccff", formatTime(arrival, true))}\n\n{Cancel|table|0|cancelCrafting}`)
+                playTransition()
+            } else {
+                sceneManager("empty")
+                processText(`Choose\n${outputString}\nfrom your inventory\n\n{Cancel|table|0|cancelCrafting}`)
+                craftingSelection = true
+                craftInfo['required'] = nonstackablesRequired
+                craftInfo['selected'] = item
+                playTransition()
+            }
         }
     })
 }
@@ -1370,15 +1464,25 @@ function tick() {
     if (craftInfo['recipe'] != null) {
         craftInfo['completed'] += getCraftingSpeed()
         changeSkill("crafting", 1)
+        craftInfo['skillXp'] += 1
         if (craftInfo['completed'] >= craftInfo['goal']) {
             playTransition()
             for (const [craftingItem, amount] of Object.entries(itemData[craftInfo['recipe']]['crafting']['materials'])) {
-                changeInventory(craftingItem, -amount)
+                if (itemData[craftingItem]['stackable'] != false) {
+                    changeInventory(craftingItem, -amount)
+                }
             }
+
+            for (const item of craftInfo['using']) {
+                changeInventory(inventoryNonStackable[item]['name'], -1, false, item)
+            }
+
             changeInventory(craftInfo['recipe'], 1)
             craftInfo['recipe'] = null
             craftInfo['completed'] = 0
             craftInfo['goal'] = 0
+            craftInfo['using'] = []
+            craftInfo['skillXp'] = 0
             sceneManager("table")
         }
     }
@@ -1633,6 +1737,42 @@ function changeEquipment(itemId) {
 document.getElementById("inventory-table").addEventListener("click", function(e) {
     if (storageAccess) {return}
     let [item, itemId] = e.target.closest("[id^=\"item-\"]").id.replace("item-", "").split("_")
+    if (craftingSelection == true) {
+        if (craftInfo['required'][item] != undefined) {
+            const inventorySlot = document.getElementById(`item-${item}_${itemId}`)
+            if (!craftInfo['using'].includes(itemId)) {
+                if (craftInfo['required'][item] > 0) {
+                    if (itemData[item]['combat']) {
+                        if (equipment[itemData[item]['combat']['class']] != undefined && equipment[itemData[item]['combat']['class']][1] == itemId) {
+                            return
+                        }
+                    }
+
+                    if (inventorySlot) {
+                        const itemSelected = document.createElement("span")
+                        itemSelected.className = "item-selected"
+                        itemSelected.textContent = "S"
+
+                        inventorySlot.appendChild(itemSelected)
+                    }
+                    craftInfo['using'].push(itemId)
+                    craftInfo['required'][item] -= 1
+                }
+            } else {
+                craftInfo['using'].splice(craftInfo['using'].indexOf(itemId), 1)
+                craftInfo['required'][item] += 1
+                inventorySlot.getElementsByClassName("item-selected")[0].remove()
+            }
+            let outputString = Object.entries(craftInfo['required']).filter(([item, amount]) => amount > 0).map(([item, amount]) => `- x${amount} ${itemData[item]['name']}`).join("\n")
+            if (outputString != "") {
+                processText(`Choose\n${outputString}\nfrom your inventory\n\n{Cancel|table|0|cancelCrafting}`)
+            } else {
+                processText(`{Confirm|craftConfirm}\n\n{Cancel|table|0|cancelCrafting}`)
+            }
+        }
+        return
+    }
+
     if (item != null) {
         if (itemData[item]['execute']) {
             itemData[item]['execute']()
@@ -1656,6 +1796,17 @@ function changeTitle(newTitle) {
 class scenes {
     static empty() {
         return ``
+    }
+
+    static craftConfirm() {
+        const item = craftInfo['selected']
+        craftInfo['selected'] = null
+        craftingSelection = false
+        let arrival = Math.ceil(time + itemData[item]['crafting']['complexity'] / getCraftingSpeed())
+        craftInfo['completed'] = 0
+        craftInfo['goal'] = itemData[item]['crafting']['complexity']
+        craftInfo['recipe'] = item
+        return `You are crafting "${itemData[item]['name']}". You'll finish at ${colorGen("#ccccff", formatTime(arrival, true))}\n\n{Cancel|table|0|cancelCrafting}`
     }
 
     static intro1() {
@@ -1890,7 +2041,7 @@ class scenes {
     }
 
     static townNorth() {
-        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{Park|park}\n\n{Town Center|townCenter|250}`
+        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{Park|park}\n{Weapon Shop|weaponShop}\n\n{Town Center|townCenter|250}`
     }
 
     static park() {
@@ -1899,6 +2050,10 @@ class scenes {
 
     static parkExplore() {
         return `You are searching for valuable objects in the park.\n\n{Stop|park}`
+    }
+
+    static weaponShop() {
+        return `"Welcome to my weapon shop, I craft and import weapons from various places. Don't think about stealing, you are in a weapon shop after all."`
     }
 }
 
@@ -1915,6 +2070,20 @@ class sceneFunctions {
         changeMoney(inventory['strawBasket'] * 5)
         changeInventory("strawBasket", -inventory['strawBasket'])
     }
+
+    static cancelCrafting() {
+        craftingSelection = false
+        changeSkill("crafting", -craftInfo['skillXp'])
+        craftInfo['recipe'] = null
+        craftInfo['completed'] = 0
+        craftInfo['goal'] = 0
+        craftInfo['using'] = []
+        craftInfo['skillXp'] = 0
+
+        for (const elem of document.querySelectorAll(".item-selected")) {
+            elem.remove()
+        }
+    }
 }
 
 class sceneEndFunctions {
@@ -1924,6 +2093,10 @@ class sceneEndFunctions {
 
     static table() {
         generateCraftingMenu()
+    }
+
+    static weaponShop() {
+        generateShop("weaponShop")
     }
 }
 
@@ -1972,7 +2145,7 @@ function processText(text) {
                     sceneManager(splitLinks[num][2])
                 } else {
                     let arrival = Math.ceil(time + Number(splitLinks[num][3]) / getMovementSpeed())
-                    processText(`You are walking towards the ${splitLinks[num][1]}. You'll arrive at ${colorGen("#CCCCFF", formatTime(arrival, true))}`)
+                    processText(`You are walking towards the ${splitLinks[num][1]}. You'll arrive at ${colorGen("#ccccff", formatTime(arrival, true))}`)
                     travelInfo['destination'] = splitLinks[num][2]
                     travelInfo['distance'] = Number(splitLinks[num][3])
                 }
@@ -1999,7 +2172,7 @@ function makeSave() {
         oldScene, currentScene, sceneText, // Scenes
         quests, completedQuests, checks, // Quests
         stats, // Stats
-        knownRecipes, craftInfo, // Crafting
+        knownRecipes, craftInfo, craftingSelection, // Crafting
         exploreData, travelInfo, // Exploration
     }
     return base
@@ -2053,12 +2226,9 @@ function loadSave(dict) {
         oldScene, currentScene, sceneText, // Scenes
         quests, completedQuests, checks, // Quests
         stats, // Stats
-        knownRecipes, craftInfo, // Crafting
+        knownRecipes, craftInfo, craftingSelection, // Crafting
         exploreData, travelInfo, // Exploration
     } = dict)
-
-    processText(sceneText)
-    if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
 
     for (const [item, amount] of Object.entries(dict['inventory'])) {
         changeInventory(item, amount)
@@ -2090,6 +2260,17 @@ function loadSave(dict) {
         changeEffect(effect, true, time, true)
     }
 
+    for (const itemId of dict['craftInfo']['using']) {
+        const inventorySlot = document.getElementById(`item-${inventoryNonStackable[itemId]['name']}_${itemId}`)
+        if (inventorySlot) {
+            const itemSelected = document.createElement("span")
+            itemSelected.className = "item-selected"
+            itemSelected.textContent = "S"
+
+            inventorySlot.appendChild(itemSelected)
+        }
+    }
+
     // Enemy loading
     if (combatData['enemy'] != null) {
         const statTypes = ["str", "def", "spd", "dex"]
@@ -2109,6 +2290,10 @@ function loadSave(dict) {
         giveQuest(quest)
     }
 
+    for (const quest of dict['completedQuests']) {
+        giveQuest(quest, complete=true)
+    }
+
     changeXp(dict['xp'])
     health = dict['health']
     updateBar("health")
@@ -2118,12 +2303,16 @@ function loadSave(dict) {
     if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
     if (dict['title'] != "Unknown") {changeTitle(dict['title'])}
 
+    processText(sceneText)
+    if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
+
     document.getElementById("log").replaceChildren()
 }
 
 document.getElementById("delete-save").addEventListener("click", function() {
     let confirm = prompt("THIS WILL DELETE YOUR SAVE. TYPE CONFIRM TO CONFIRM")
     if (confirm.toLowerCase() == "confirm") {
+        saveEnabled = false
         localStorage.removeItem("save1")
         window.location.reload()
     }
@@ -2151,7 +2340,9 @@ if (localStorage.getItem("savetemp") == undefined) {
 }
 
 window.addEventListener("beforeunload", function() {
-    saveToLocal(makeSave())
+    if (saveEnabled == true) {
+        saveToLocal(makeSave())
+    }
 })
 
 updateBar("health")
