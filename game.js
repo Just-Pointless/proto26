@@ -1,4 +1,4 @@
-const VERSION = "0.9"
+const VERSION = "0.10"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -139,6 +139,30 @@ const skillData = {
         "name": "Exploration",
         "desc": "Increases speed of exploring",
         "scaling": 1.3
+    },
+    "unarmedMastery": {
+        "name": "Unarmed Mastery",
+        "shortName": "Unarmed M",
+        "desc": "Increases damage dealt when unarmed",
+        "scaling": 1.3,
+    },
+    "clubMastery": {
+        "name": "Club Mastery",
+        "shortName": "Club M",
+        "desc": "Increases damage dealt with clubbing weapons",
+        "scaling": 1.3,
+    },
+    "spearMastery": {
+        "name": "Spear Mastery",
+        "shortName": "Spear M",
+        "desc": "Increases damage dealt with spear weapons",
+        "scaling": 1.3,
+    },
+    "knifeMastery": {
+        "name": "Knife Mastery",
+        "shortName": "Knife M",
+        "desc": "Increases damage dealt with knife weapons",
+        "scaling": 1.3,
     }
 }
 const itemData = {
@@ -295,8 +319,10 @@ const questData = {
 }
 const shopData = {
     "merchant": [
-        {"name": "exercisePill", "chance": 100, "quantity": [1, 3], "price": [5, 7]}
-    ]
+        {"name": "exercisePill", "chance": 100, "quantity": [1, 3], "price": [5, 7]},
+        {"name": "knife", "chance": 50, "quantity": [1, 1], "price": [19, 25]}
+    ],
+    "weaponShop": []
 }
 const gyms = {
     "none": {
@@ -605,7 +631,7 @@ function changeSkill(skill, skillXp) {
 
         const skillbarText = document.createElement("div")
         skillbarText.className = "skillbar-text"
-        skillbarText.textContent = `${skillData[skill]['name']} ${xpToLevel(skills[skill], false, scaling)}: ${Math.round(xpIntoLevel(skills[skill], scaling))}/${Math.round(xpForLevel(xpToLevel(skills[skill], false, scaling), scaling))}`
+        skillbarText.textContent = `${skillData[skill]['shortName'] || skillData[skill]['name']} ${xpToLevel(skills[skill], false, scaling)}: ${formatNumber(xpIntoLevel(skills[skill], scaling), true)}/${formatNumber(xpForLevel(xpToLevel(skills[skill], false, scaling), scaling), true)}`
 
         skillbarParent.appendChild(skillbarFill)
         skillbarParent.appendChild(skillbarText)
@@ -616,7 +642,7 @@ function changeSkill(skill, skillXp) {
         skillbarFill.style.width = `${xpIntoLevel(skills[skill], scaling) / xpForLevel(xpToLevel(skills[skill], false, scaling), scaling) * 100}%`
 
         const skillbarText = document.getElementById(`skill-${skill}`).getElementsByClassName("skillbar-text")[0]
-        skillbarText.textContent = `${skillData[skill]['name']} ${xpToLevel(skills[skill], false, scaling)}: ${Math.round(xpIntoLevel(skills[skill], scaling))}/${Math.round(xpForLevel(xpToLevel(skills[skill], false, scaling), scaling))}`
+        skillbarText.textContent = `${skillData[skill]['shortName'] || skillData[skill]['name']} ${xpToLevel(skills[skill], false, scaling)}: ${formatNumber(xpIntoLevel(skills[skill], scaling), true)}/${formatNumber(xpForLevel(xpToLevel(skills[skill], false, scaling), scaling), true)}`
     }
 
     if (currentLevel < xpToLevel(skills[skill], false, scaling)) {
@@ -624,7 +650,7 @@ function changeSkill(skill, skillXp) {
     }
 }
 
-function formatNumber(num) {
+function formatNumber(num, round=false) {
     if (!isFinite(num)) return "inf"
 
     const sign = num < 0 ? "-" : ""
@@ -639,8 +665,11 @@ function formatNumber(num) {
 
     const value = num / 1000 ** exp
     const decimals = value < 10 ? 2 : value < 100 ? 1 : 0
-
-    return sign + value.toFixed(decimals).replace(/\.0+$/, "") + units[exp]
+    if (round == false || num >= 1000) {
+        return sign + value.toFixed(decimals).replace(/\.0+$/, "") + units[exp]
+    } else {
+        return value.toFixed()
+    }
 }
 
 function getMovementSpeed() {
@@ -723,6 +752,7 @@ function changeInventory(item, amount, announceReduction=false, itemId=null, new
                 const itemCombatData = itemData[item]['combat']
                 if (itemCombatData) {
                     newItemData['durability'] = randomRange(itemData[item]['durability'][0], itemData[item]['durability'][1], 0)
+                    newItemData['maxDurability'] = newItemData['durability']
                     if (itemCombatData['class'] == "weapon") {
                         newItemData['damage'] = randomRange(itemCombatData['damage'][0], itemCombatData['damage'][1], 2)
                     }
@@ -1303,7 +1333,7 @@ function generateCraftingMenu() {
         if (item != null) {
             let nonstackablesRequired = {}
             for (const [craftingItem, amount] of Object.entries(itemData[item]['crafting']['materials'])) {
-                if (itemData[craftingItem]['stackable'] == true) {
+                if (itemData[craftingItem]['stackable'] !== false) {
                     if (inventory[craftingItem] < amount || inventory[craftingItem] == undefined) {
                         insertLog(colorGen("#aaaaaa", "Missing materials"))
                         return
@@ -1520,7 +1550,11 @@ function tick() {
 
             let turnDmg = getBaseDamage(effectiveStats['str']) * (Math.random() * 0.4 + 0.8)
             turnDmg = turnDmg * (1 + getSkillLevel("fighting") * 0.05)
-            if (equipment['weapon']) {turnDmg = turnDmg * getEquipmentStats("weapon")['damage']}
+            if (equipment['weapon']) {
+                turnDmg = turnDmg * getEquipmentStats("weapon")['damage'] * (1 + getSkillLevel(`${itemData[equipment['weapon'][0]]['subclass']}Mastery`) * 0.03)
+            } else {
+                turnDmg = turnDmg * (1 + getSkillLevel("unarmedMastery") * 0.03)
+            }
 
             const turnDmgMitigation = calcDamageMitigation(effectiveStats['str'], enemyStats['def'])
             const turnHitChance = calcHitChance(effectiveStats['spd'], enemyStats['dex'])
@@ -1530,14 +1564,21 @@ function tick() {
                 insertLog(`You -> ${colorGen("#ff3333", turnActualDmg)}`)
                 combatData['enemyHealth'] -= turnActualDmg
                 if (equipment['weapon']) {
+                    const item = equipment['weapon'][0]
+                    const itemId = equipment['weapon'][1]
                     getEquipmentStats("weapon")['durability'] -= 1
+                    document.getElementById("equipment-weapon").querySelector(".bar-fill").style.width = `${getEquipmentStats("weapon")['durability'] / getEquipmentStats("weapon")['maxDurability'] * 100}%`
                     if (getEquipmentStats("weapon")['durability'] <= 0) {
-                        const item = equipment['weapon'][0]
-                        const itemId = equipment['weapon'][1]
                         insertLog(`${genItemLogText(item, null)} broke`, [itemData[item]['name'], itemData[item]['desc']])
                         changeEquipment(itemId)
                         changeInventory(item, -1, false, itemId)
                     }
+
+                    if (skillData[`${itemData[item]['subclass']}Mastery`]) {
+                        changeSkill(`${itemData[item]['subclass']}Mastery`, 1)
+                    }
+                } else {
+                    changeSkill("unarmedMastery", 1)
                 }
             } else {
                 insertLog(colorGen("#aaaaaa", "You missed"))
@@ -1715,8 +1756,9 @@ function changeEquipment(itemId) {
             document.getElementById(`item-${equipment[itemClass][0]}_${equipment[itemClass][1]}`).querySelector(".item-equipped").remove()
         }
         equipment[itemClass] = [item, itemId]
-        equipmentElem.textContent = itemData[item]['name']
-        equipmentElem.style.color = "#ffffff"
+        equipmentElem.querySelector(".equipment-item-text").textContent = itemData[item]['name']
+        equipmentElem.querySelector(".equipment-item-text").style.color = "#ffffff"
+        equipmentElem.querySelector(".bar-fill").style.width = `${inventoryNonStackable[itemId]['durability'] / inventoryNonStackable[itemId]['maxDurability'] * 100}%`
         const inventorySlot = document.getElementById(`item-${item}_${itemId}`)
         if (inventorySlot) {
             const itemEquipped = document.createElement("span")
@@ -1727,8 +1769,9 @@ function changeEquipment(itemId) {
         }
     } else {
         equipment[itemData[item]['combat']['class']] = null
-        equipmentElem.textContent = equipmentElem.getAttribute("data-tooltip-title")
-        equipmentElem.style.color = ""
+        equipmentElem.querySelector(".equipment-item-text").textContent = equipmentElem.getAttribute("data-tooltip-title")
+        equipmentElem.querySelector(".equipment-item-text").style.color = ""
+        equipmentElem.querySelector(".bar-fill").style.width = "0"
 
         document.getElementById(`item-${item}_${itemId}`).querySelector(".item-equipped").remove()
     }
@@ -2053,7 +2096,7 @@ class scenes {
     }
 
     static weaponShop() {
-        return `"Welcome to my weapon shop, I craft and import weapons from various places. Don't think about stealing, you are in a weapon shop after all."`
+        return `"Welcome to my weapon shop, I craft and import weapons from various places. Don't think about stealing, you are in a weapon shop after all."\n\n{Leave|townNorth}`
     }
 }
 

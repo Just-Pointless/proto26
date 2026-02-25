@@ -1,3 +1,11 @@
+v0.10
+- Add item durability bars
+- Change equipment layout
+- Fix crafting with stackable items check
+- Add weapon mastery skills
+- Add knives to merchant
+- Add leaving to weapon shop
+
 v0.9
 - Improve quests view
 - Show completed quests

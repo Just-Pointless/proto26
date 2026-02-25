@@ -262,13 +262,23 @@ body {
     gap: 2px;
 }
 
-.equipment-item {
+.equipment-item-holder {
+    position: relative;
     border: 2px solid #444499;
+    height: 24px;
+}
+
+.bar-fill.equipment {
+    background-color: #555577;
+    width: 0;
+}
+
+.equipment-item-text {
     text-align: center;
     font-size: 16px;
-    height: 24px;
     line-height: 24px;
     color: #aaaaaa;
+    position: relative;
 }
 
 .sidebar-menu-title {
