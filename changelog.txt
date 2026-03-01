@@ -1,3 +1,7 @@
+v0.11
+- Fix image regex
+- Add images to links
+
 v0.10
 - Add item durability bars
 - Change equipment layout

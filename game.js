@@ -1,4 +1,4 @@
-const VERSION = "0.10"
+const VERSION = "0.11"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -86,7 +86,7 @@ var craftingSelection = false
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
-const imageRegex = new RegExp(/!\\[(.*?)\\]/g)
+const imageRegex = new RegExp(/!\[(.*?)\]/g)
 const enemyData = {
     "strawDummy": {
         "name": "Straw Dummy",
@@ -1836,6 +1836,10 @@ function changeTitle(newTitle) {
     insertLog(`Title Changed: ${colorGen("#dd8833", `"${title}"`)}`)
 }
 
+function genTrainingAreaText(target) {
+    return `{![dumbbells.png]Train Strength|${target}_str}\n{![shield.png]Train Defense|${target}_def}\n{![treadmill.png]Train Speed|${target}_spd}\n{![dexterity.png]Train Dexterity|${target}_dex}`
+}
+
 class scenes {
     static empty() {
         return ``
@@ -1881,7 +1885,7 @@ class scenes {
     }
 
     static intro8() {
-        return `You follow Alan until he reaches a small wooden house. He gestures for you to head inside.\n\n{Enter|intro9}`
+        return `You follow Alan until he reaches a small wooden house. He gestures for you to head inside.\n\n{![enter.png]Enter|intro9}`
     }
 
     static intro9() {
@@ -1894,76 +1898,76 @@ class scenes {
     }
 
     static home() {
-        return `You are in your home. You can rest here.\n\n{Sleep|sleep}\n{Storage|storage}\n{Table|table}\n\n{Leave|housingArea}`
+        return `You are in your home. You can rest here.\n\n{![bed.png]Sleep|sleep}\n{![storage.png]Storage|storage}\n{![table.png]Table|table}\n\n{![leave.png]Leave|housingArea}`
     }
 
     static sleep() {
-        return `You are currently sleeping. Time passes faster...\n\n{Get up|home}`
+        return `You are currently sleeping. Time passes faster...\n\n{![leave.png]Get up|home}`
     }
 
     static storage() {
         toggleStorageAccess(true)
-        return `You can access your storage from the sidebar. Click an item in your inventory to deposit it and click an item in your storage to withdraw it.\n\n{Leave|home|0|leaveStorage}`
+        return `You can access your storage from the sidebar. Click an item in your inventory to deposit it and click an item in your storage to withdraw it.\n\n{![leave.png]Leave|home|0|leaveStorage}`
     }
 
     static table() {
-        return `You are able to craft items here.\n\n{Leave|home}`
+        return `You are able to craft items here.\n\n{![leave.png]Leave|home}`
     }
 
     static housingArea() {
-        return `You are in the housing area of the town. You can access your home or other areas from here.\n\n{Home|home}\n\n{Town Center|townCenter|250}`
+        return `You are in the housing area of the town. You can access your home or other areas from here.\n\n{![enter.png]Home|home}\n\n{![town_center.png]Town Center|townCenter|250}`
     }
 
     static townCenter() {
-        return `You are at the center of the town. Many people rush by hastily.\n\n{Notice Board|noticeBoard}\n{Training Grounds|trainingGrounds}\n{Dojo|dojo}\n\n{Hospital|hospital}\n{Merchant|merchant}\n\n{Alley|alley}\n\n{Housing Area|housingArea|250}\n{Town North|townNorth|250}`
+        return `You are at the center of the town. Many people rush by hastily.\n\n{![poster.png]Notice Board|noticeBoard}\n{![dumbbells.png]Training Grounds|trainingGrounds}\n{![training_dummy.png]Dojo|dojo}\n\n{![hospital.png]Hospital|hospital}\n{![dollar.png]Merchant|merchant}\n\n{![alley.png]Alley|alley}\n\n{![wood_door.png]Housing Area|housingArea|250}\n{![arrow_up.png]Town North|townNorth|250}`
     }
 
     static noticeBoard() {
-        return `There is nothing of interest to you here.\n\n{Return|townCenter}`
+        return `There is nothing of interest to you here.\n\n{![leave.png]Return|townCenter}`
     }
 
     static trainingGrounds() {
         if (!checks['trainingGroundsTeamIntro'] && getTotalBattlestats() >= 10) {
             checks['trainingGroundsTeamIntro'] = true
-            return `"Hi! we're an up-and-coming fighting team for matches in The Arena. If you're willing to represent our team, we'll give you various supplies and equipment to help you improve your stats quickly. Sounds good?"\n\n{Yes|trainingGroundsTeamIntro1}\n\n{Maybe Later|trainingGrounds}`
+            return `"Hi! we're an up-and-coming fighting team for matches in The Arena. If you're willing to represent our team, we'll give you various supplies and equipment to help you improve your stats quickly. Sounds good?"\n\n{![tick.png]Yes|trainingGroundsTeamIntro1}\n\n{![cross.png]Maybe Later|trainingGrounds}`
         }
 
-        let r = `You are in the training grounds. You are able to improve your strength, defense, speed or dexterity here.\n\n{Training Instructor|trainingGroundsInstructor}`
+        let r = `You are in the training grounds. You are able to improve your strength, defense, speed or dexterity here.\n\n{![chat.png]Training Instructor|trainingGroundsInstructor}`
         if (checks['trainingGroundsTeamIntro'] && team != "nextLevel") {
-            r += `\n\n{Join Team|trainingGroundsTeamIntro1}`
+            r += `\n\n{![tick.png]Join Team|trainingGroundsTeamIntro1}`
         }
         
         if (team == "nextLevel") {
             r += `\n\n{Team Tent|trainingGrounds_nextLevel}`
         } else {
-            r += `\n\n{Train Strength|trainingGrounds_str}\n{Train Defense|trainingGrounds_def}\n{Train Speed|trainingGrounds_spd}\n{Train Dexterity|trainingGrounds_dex}`
+            r += `\n\n${genTrainingAreaText("trainingGrounds")}`
         }
-        r += `\n\n{Leave|townCenter}`
+        r += `\n\n{![leave.png]Leave|townCenter}`
         return r
     }
 
     static trainingGroundsInstructor() {
-        return `{Ask about stats|trainingGroundsInstructorAskStats}\n\n{Return|trainingGrounds}`
+        return `{![chat.png]Ask about stats|trainingGroundsInstructorAskStats}\n\n{![leave.png]Return|trainingGrounds}`
     }
 
     static trainingGroundsInstructorAskStats() {
-        return `"Everyone has four main stats. Strength increases the damage you deal, Defense reduces the damage you take, Speed increases your chances of hitting and Dexterity increases the chance of dodging attacks."\n\n{Return|trainingGroundsInstructor}`
+        return `"Everyone has four main stats. Strength increases the damage you deal, Defense reduces the damage you take, Speed increases your chances of hitting and Dexterity increases the chance of dodging attacks."\n\n{![leave.png]Return|trainingGroundsInstructor}`
     }
 
     static trainingGrounds_str() {
-        return `You are doing push-ups in the training grounds.\n\n{Stop|trainingGrounds}`
+        return `You are doing push-ups in the training grounds.\n\n{![stop.png]Stop|trainingGrounds}`
     }
 
     static trainingGrounds_def() {
-        return `You are practicing bracing in the training grounds.\n\n{Stop|trainingGrounds}`
+        return `You are practicing bracing in the training grounds.\n\n{![stop.png]Stop|trainingGrounds}`
     }
 
     static trainingGrounds_spd() {
-        return `You are practicing speed punching in the training grounds.\n\n{Stop|trainingGrounds}`
+        return `You are practicing speed punching in the training grounds.\n\n{![stop.png]Stop|trainingGrounds}`
     }
 
     static trainingGrounds_dex() {
-        return `You are balancing on a beam in the training grounds.\n\n{Stop|trainingGrounds}`
+        return `You are balancing on a beam in the training grounds.\n\n{![stop.png]Stop|trainingGrounds}`
     }
 
     static trainingGroundsTeamIntro1() {
@@ -1985,23 +1989,23 @@ class scenes {
     }
 
     static trainingGrounds_nextLevel() {
-        return `You are inside your team's tent.\n\n{Train Strength|trainingGrounds_nextLevel_str}\n{Train Defense|trainingGrounds_nextLevel_def}\n{Train Speed|trainingGrounds_nextLevel_spd}\n{Train Dexterity|trainingGrounds_nextLevel_dex}\n\n{Leave|trainingGrounds}`
+        return `You are inside your team's tent.\n\n${genTrainingAreaText("trainingGrounds_nextLevel")}\n\n{![leave.png]Leave|trainingGrounds}`
     }
 
     static trainingGrounds_nextLevel_str() {
-        return `You are lifting weights in your team's tent.\n\n{Stop|trainingGrounds_nextLevel}`
+        return `You are lifting weights in your team's tent.\n\n{![stop.png]Stop|trainingGrounds_nextLevel}`
     }
 
     static trainingGrounds_nextLevel_def() {
-        return `You are practicing sparring against a team member.\n\n{Stop|trainingGrounds_nextLevel}`
+        return `You are practicing sparring against a team member.\n\n{![stop.png]Stop|trainingGrounds_nextLevel}`
     }
 
     static trainingGrounds_nextLevel_spd() {
-        return `You are practicing spot jogging in your team's tent.\n\n{Stop|trainingGrounds_nextLevel}`
+        return `You are practicing spot jogging in your team's tent.\n\n{![stop.png]Stop|trainingGrounds_nextLevel}`
     }
 
     static trainingGrounds_nextLevel_dex() {
-        return `You are practicing dodging punches from a team member.\n\n{Stop|trainingGrounds_nextLevel}`
+        return `You are practicing dodging punches from a team member.\n\n{![stop.png]Stop|trainingGrounds_nextLevel}`
     }
 
     static dojo() {
@@ -2010,13 +2014,13 @@ class scenes {
             return `As you walk into the dojo, an old man greets you.\n\n"Welcome to the dojo. This is the main place in town where fighters of all classes come to train their fighting skills."\n\n{Next|dojo}`
         } else {
             // if (completedQuests.includes("dojoIntro1") && !checks['dojoIntro1Talked']) {r += `{Dojo Instructor|dojoInstructor}\n`}
-            return `You are in the dojo.\n\n{Dojo Instructor|dojoInstructor}\n{Practice fighting a training dummy|dojo_trainingDummy}\n\n{Leave|townCenter}`
+            return `You are in the dojo.\n\n{![chat.png]Dojo Instructor|dojoInstructor}\n{![sword.png]Practice fighting a training dummy|dojo_trainingDummy}\n\n{![leave.png]Leave|townCenter}`
         }
     }
 
     static dojo_trainingDummy() {
         generateEnemy("strawDummy")
-        return `You are practicing fighting against training dummies.\n\n{Stop|dojo|0|endFight}`
+        return `You are practicing fighting against training dummies.\n\n{![stop.png]Stop|dojo|0|endFight}`
     }
 
     static dojoQuestIntro() {
@@ -2027,14 +2031,14 @@ class scenes {
     static dojoQuestIntro2() {
         giveQuest("dojoIntro1")
         if (battleStats['str'] < 1.5) {
-            return `"I'm willing to guide you in order to become stronger. But first, you need to reach the goal of 1.5 strength and destroy 5 straw dummies. Come talk to me again once you're done."\n\n{Return|dojo}`
+            return `"I'm willing to guide you in order to become stronger. But first, you need to reach the goal of 1.5 strength and destroy 5 straw dummies. Come talk to me again once you're done."\n\n{![leave.png]Return|dojo}`
         } else {
-            return `"I'm willing to guide you in order to become stronger. But first, you need to destroy 5 straw dummies. Come talk to me again once you're done."\n\n{Return|dojo}`
+            return `"I'm willing to guide you in order to become stronger. But first, you need to destroy 5 straw dummies. Come talk to me again once you're done."\n\n{![leave.png]Return|dojo}`
         }
     }
 
     static dojoInstructor() {
-        return `"Need something?"\n\n{Quest Completion|dojoInstructorQuest}\n\n{Return|dojo}`
+        return `"Need something?"\n\n{![tick.png]Quest Completion|dojoInstructorQuest}\n\n{![leave.png]Return|dojo}`
     }
 
     static dojoInstructorQuest() {
@@ -2051,52 +2055,52 @@ class scenes {
         } else if (completedQuests.includes("dojoIntro3")) {
             return `"Congratulations on completing all my quests. This is the end of my questline for now, you can still continue training and levelling up your skills. Good luck."\n\n{Return|dojo}`
         }
-        return `"You don't seem to have completed any new quests."\n\n{Return|dojo}`
+        return `"You don't seem to have completed any new quests."\n\n{![leave.png]Return|dojo}`
     }
 
     static hospital() {
         if (health < calcMaxHp()) {
-            return `You are getting healed by a doctor...\n\n{Leave|townCenter}`
+            return `You are getting healed by a doctor...\n\n{![leave.png]Leave|townCenter}`
         } else {
-            return `You are already at maximum health.\n\n{Leave|townCenter}`
+            return `You are already at maximum health.\n\n{![leave.png]Leave|townCenter}`
         }
     }
 
     static alley() {
         if (!quests['dojoIntro3'] && !completedQuests.includes("dojoIntro3")) {
-            return `"Sorry, no civilians allowed here. We have an infestation problem."\n\n{Leave|townCenter}`
+            return `"Sorry, no civilians allowed here. We have an infestation problem."\n\n{![leave.png]Leave|townCenter}`
         } else {
             generateEnemy("mouse")
-            return `You are in the alley. There are mice and rats everywhere.\n\n{Leave|townCenter|0|endFight}`
+            return `You are in the alley. There are mice and rats everywhere.\n\n{![leave.png]Leave|townCenter|0|endFight}`
         }
     }
 
     static merchant() {
-        return `"Welcome! I'm the main supplier of various goods in this town. I can also buy any straw baskets that you may have. Feel free to look around."\n\n{Sell|merchantSell}\n\n{Leave|townCenter}`
+        return `"Welcome! I'm the main supplier of various goods in this town. I can also buy any straw baskets that you may have. Feel free to look around."\n\n{![dollar.png]Sell|merchantSell}\n\n{![leave.png]Leave|townCenter}`
     }
 
     static merchantSell() {
         if (inventory['strawBasket'] == undefined) {
-            return `"It appears that you don't have any straw baskets to sell. Come back when you get some, I pay $5 for each."\n\n{Return|merchant}`
+            return `"It appears that you don't have any straw baskets to sell. Come back when you get some, I pay $5 for each."\n\n{![leave.png]Return|merchant}`
         } else {
-            return `"Would you like to sell all your straw baskets for a total of ${colorGen("#cccc55", `$${inventory['strawBasket'] * 5}`)}?"\n\n{Yes|merchant|0|merchantSell}\n\n{Return|merchant}`
+            return `"Would you like to sell all your straw baskets for a total of ${colorGen("#cccc55", `$${inventory['strawBasket'] * 5}`)}?"\n\n{![tick.png]Yes|merchant|0|merchantSell}\n\n{![leave.png]Return|merchant}`
         }
     }
 
     static townNorth() {
-        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{Park|park}\n{Weapon Shop|weaponShop}\n\n{Town Center|townCenter|250}`
+        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{![park.png]Park|park}\n{![sword.png]Weapon Shop|weaponShop}\n\n{![town_center.png]Town Center|townCenter|250}`
     }
 
     static park() {
-        return `You are in the park. Various trees and plants are scattered around.\n\n{Explore|parkExplore}\n\n{Leave|townNorth}`
+        return `You are in the park. Various trees and plants are scattered around.\n\n{![search.png]Explore|parkExplore}\n\n{![leave.png]Leave|townNorth}`
     }
 
     static parkExplore() {
-        return `You are searching for valuable objects in the park.\n\n{Stop|park}`
+        return `You are searching for valuable objects in the park.\n\n{![stop.png]Stop|park}`
     }
 
     static weaponShop() {
-        return `"Welcome to my weapon shop, I craft and import weapons from various places. Don't think about stealing, you are in a weapon shop after all."\n\n{Leave|townNorth}`
+        return `"Welcome to my weapon shop, I craft and import weapons from various places. Don't think about stealing, you are in a weapon shop after all."\n\n{![leave.png]Leave|townNorth}`
     }
 }
 
@@ -2168,6 +2172,7 @@ function processText(text) {
                 img.style.display = "inline-block"
                 img.style.width = "1.5em"
                 img.style.height = "1.5em"
+                img.style.marginRight = "6px"
                 img.style.verticalAlign = "middle"
                 div.appendChild(img)
             }
@@ -2177,7 +2182,28 @@ function processText(text) {
         
         if (num < splitLinks.length) {
             let button = document.createElement("button")
-            button.innerHTML = splitLinks[num][1]
+            let labelParts = splitLinks[num][1].split(imageRegex)
+            if (labelParts.length > 1) {
+                labelParts.forEach(function(part, index) {
+                    if (index % 2 == 0) {
+                        let span = document.createElement("span")
+                        span.innerHTML = part
+                        button.appendChild(span)
+                    } else {
+                        let img = document.createElement("img")
+                        img.src = "img/" + part
+                        img.style.display = "inline-block"
+                        img.style.width = "1.5em"
+                        img.style.height = "1.5em"
+                        img.style.marginRight = "6px"
+                        img.style.verticalAlign = "middle"
+                        button.appendChild(img)
+                    }
+                })
+            } else {
+                button.innerHTML = splitLinks[num][1]
+            }
+            
             button.className = "main-link"
             button.id = "button" + num
             button.addEventListener("click", function() {
@@ -2188,7 +2214,7 @@ function processText(text) {
                     sceneManager(splitLinks[num][2])
                 } else {
                     let arrival = Math.ceil(time + Number(splitLinks[num][3]) / getMovementSpeed())
-                    processText(`You are walking towards the ${splitLinks[num][1]}. You'll arrive at ${colorGen("#ccccff", formatTime(arrival, true))}`)
+                    processText(`You are walking towards the ${splitLinks[num][1].replace(imageRegex, "")}. You'll arrive at ${colorGen("#ccccff", formatTime(arrival, true))}`)
                     travelInfo['destination'] = splitLinks[num][2]
                     travelInfo['distance'] = Number(splitLinks[num][3])
                 }

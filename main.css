@@ -63,6 +63,10 @@ body {
     color: #7da8e8;
 }
 
+img { 
+    image-rendering: pixelated;
+}
+
 .shop-holder {
     color: #ffffff;
     font-size: 16px;
