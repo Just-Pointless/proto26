@@ -207,7 +207,7 @@ img {
 }
 
 .quest-parent {
-    width: 100%;
+    width: calc(100% - 4px);
     border: 2px solid #555555;
     font-size: 14px;
 }
@@ -246,6 +246,13 @@ img {
     top: 40px;
     bottom: 0;
     left: 5px;
+}
+
+#sidebar-menu-quests {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-color: #555555 #333333;
+    scrollbar-width: thin;
 }
 
 #inventory-table {
@@ -354,6 +361,8 @@ img {
 }
 
 #effects-bar {
+    display: flex;
+    gap: 4px;
     position: absolute;
     bottom: 5px;
     width: 100%;

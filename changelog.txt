@@ -1,3 +1,13 @@
+v0.12
+- Implement title system
+- Expand dojo questline
+- Clean up dojo questline code
+- Fix effects bar when multiple effects are added
+- Allow for scene functions to use arguments
+- Move first training dummy kill logic
+- Fix missing periods in text
+- Reduce xp gain from mice
+
 v0.11
 - Fix image regex
 - Add images to links

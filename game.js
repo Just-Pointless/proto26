@@ -1,4 +1,4 @@
-const VERSION = "0.11"
+const VERSION = "0.12"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -9,7 +9,7 @@ var currentScene = ""
 var sceneText = ""
 var health = 10
 var xp = 0
-var title = "Unknown"
+var playerTitle = "Unknown"
 var travelInfo = {
     "destination": null,
     "distance": 0,
@@ -83,8 +83,9 @@ var exploreData = {
 }
 var saveEnabled = true
 var craftingSelection = false
+var titleScores = {}
 
-const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}]+)?}/g)
+const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}(]+)?\(?([^(){}|]+)?\)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
 const imageRegex = new RegExp(/!\[(.*?)\]/g)
 const enemyData = {
@@ -111,7 +112,33 @@ const enemyData = {
         "def": [0.2, 0.3],
         "spd": [1.5, 2],
         "dex": [1.5, 2],
-        "xp": [5, 7]
+        "xp": [3, 5]
+    },
+    "strawGolem": {
+        "name": "Straw Golem",
+        "health": 150,
+        "str": 1,
+        "def": 2,
+        "spd": 1,
+        "dex": 0.5,
+        "loot": [
+            {"item": "straw", "chances": {
+                1: 25,
+                2: 25,
+                3: 25,
+                4: 25,
+            }}
+        ],
+        "xp": 20
+    },
+    "woodGolem": {
+        "name": "Wood Golem",
+        "health": 400,
+        "str": 10,
+        "def": 10,
+        "spd": 5,
+        "dex": 2,
+        "xp": 60
     }
 }
 const skillData = {
@@ -315,6 +342,44 @@ const questData = {
                 }
             },
         }
+    },
+    "dojoIntro4": {
+        "name": "Dojo Introduction 4",
+        "desc": "You have been tasked by the instructor to defeat the golem in the dojo yard",
+        "repeatable": false,
+        "goals": {
+            "kills": {
+                "strawGolem": {
+                    "amount": 1,
+                    "lifetime": false
+                }
+            },
+        }
+    },
+    "dojoIntro5": {
+        "name": "Dojo Introduction 5",
+        "desc": "You have been tasked by the instructor to reach 10 in every stat",
+        "repeatable": false,
+        "goals": {
+            "stats": {
+                "str": {
+                    "amount": 10,
+                    "lifetime": true
+                },
+                "def": {
+                    "amount": 10,
+                    "lifetime": true
+                },
+                "spd": {
+                    "amount": 10,
+                    "lifetime": true
+                },
+                "dex": {
+                    "amount": 10,
+                    "lifetime": true
+                }
+            }
+        }
     }
 }
 const shopData = {
@@ -342,6 +407,14 @@ const itemClasses = {
     "misc": "#cccccc",
     "consumable": "#ffcc22",
     "gear": "#ff8888"
+}
+const titleData = {
+    "athlete": {"name": "Athlete"},
+    "fighter": {"name": "Fighter"},
+    "disciple": {"name": "Disciple"},
+    "seeker": {"name": "Seeker"},
+    "crafter": {"name": "Crafter"},
+    "sleeper": {"name": "Sleeper"}
 }
 
 function formatTime(time, timeOnly=false) {
@@ -554,6 +627,7 @@ function endFight() {
         "spd": 0,
         "dex": 0
     }
+    combatData['onDeath'] = undefined
 
     document.getElementById("enemy-name").textContent = ""
     updateBar("enemyHealth")
@@ -573,17 +647,21 @@ function killEnemy() {
     }
 
     if (enemyData[combatData['enemy']]['xp'] != undefined) {
-        let xpGain = Math.round(randomRange(enemyData[combatData['enemy']]['xp'][0], enemyData[combatData['enemy']]['xp'][1], 2))
+        let xpGain = 0
+        if (Array.isArray(enemyData[combatData['enemy']]['xp'])) {
+            xpGain = Math.round(randomRange(enemyData[combatData['enemy']]['xp'][0], enemyData[combatData['enemy']]['xp'][1], 2))
+        } else {
+            xpGain = enemyData[combatData['enemy']]['xp']
+        }
         changeXp(xpGain)
-    }
-
-    if (combatData['enemy'] == "strawDummy" && checks['firstDummy'] != true) {
-        playTransition()
-        sceneManager("dojoQuestIntro")
     }
 
     changeQuestProgress("kills", combatData['enemy'], 1)
     stats['kills'][combatData['enemy']] = (stats['kills'][combatData['enemy']] ?? 0) + 1
+
+    if (combatData['onDeath']) {
+        onDeathFunctions(combatData['onDeath'])
+    }
 
     endFight()
 }
@@ -1390,25 +1468,61 @@ function getEquipmentStats(type) {
     return inventoryNonStackable[equipment[type][1]]
 }
 
+function changeTitleXp(selectedTitle, amount) {
+    titleScores[selectedTitle] = (titleScores[selectedTitle] ?? 0) + amount
+
+    if (amount > 0) {
+        for (const title of Object.keys(titleScores)) {
+            if (title != selectedTitle) {
+                titleScores[title] *= 0.9999
+            }
+        }
+    }
+
+    const highest = Object.entries(titleScores).reduce((max, current) => current[1] > max[1] ? current : max)
+    if (highest[1] >= 50 && playerTitle != titleData[highest[0]]['name']) {
+        changeTitle(titleData[highest[0]]['name'])
+    }
+}
+
+function onDeathFunctions(name) {
+    if (name == "firstTrainingDummy") {
+        playTransition()
+        sceneManager("dojoQuestIntro")
+    } else if (name == "strawGolem") {
+        playTransition()
+        sceneManager("dojoYard")
+        checks['golemMax'] = Math.max(checks['golemMax'] || 0, 1)
+    } else if (name == "woodGolem") {
+        playTransition()
+        sceneManager("dojoYard")
+        //checks['golemMax'] = Math.max(checks['golemMax'] || 0, 2)
+    }
+}
+
 const sceneTicks = new Map([
     ["trainingGrounds_str", function() {
         changeBattlestat("str", gyms['none']['str'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_def", function() {
         changeBattlestat("def", gyms['none']['def'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_spd", function() {
         changeBattlestat("spd", gyms['none']['spd'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_dex", function() {
         changeBattlestat("dex", gyms['none']['dex'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["dojo_trainingDummy", function() {
@@ -1419,6 +1533,7 @@ const sceneTicks = new Map([
     ["sleep", function() {
         changeEnergy(2.05)
         noSleepTime = Math.max(noSleepTime - 40, 0)
+        changeTitleXp("sleeper", 1)
     }],
     ["hospital", function() {
         changeHp(2)
@@ -1434,21 +1549,25 @@ const sceneTicks = new Map([
     ["trainingGrounds_nextLevel_str", function() {
         changeBattlestat("str", gyms['nextLevel']['str'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_nextLevel_def", function() {
         changeBattlestat("def", gyms['nextLevel']['def'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_nextLevel_spd", function() {
         changeBattlestat("spd", gyms['nextLevel']['spd'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }],
     ["trainingGrounds_nextLevel_dex", function() {
         changeBattlestat("dex", gyms['nextLevel']['dex'])
         changeSkill("training", 1)
+        changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
     }]
 ])
@@ -1494,6 +1613,7 @@ function tick() {
     if (craftInfo['recipe'] != null) {
         craftInfo['completed'] += getCraftingSpeed()
         changeSkill("crafting", 1)
+        changeTitleXp("crafter", 2)
         craftInfo['skillXp'] += 1
         if (craftInfo['completed'] >= craftInfo['goal']) {
             playTransition()
@@ -1524,6 +1644,7 @@ function tick() {
         }
         exploreData['completed'] += getExploreSpeed()
         changeSkill("exploration", 1)
+        changeTitleXp("seeker", 1)
         if (exploreData['completed'] >= exploreData['goal']) {
             exploreData['completed'] = 0
             exploreData['goal'] = randomRange(explorePools[currentScene]['difficulty'][0], explorePools[currentScene]['difficulty'][1], 0)
@@ -1584,6 +1705,11 @@ function tick() {
                 insertLog(colorGen("#aaaaaa", "You missed"))
             }
             changeSkill("fighting", 1)
+            if (combatData['enemy'] == "strawDummy") {
+                changeTitleXp("disciple", 1)
+            } else {
+                changeTitleXp("fighter", 1)
+            }
 
             if (combatData['enemyHealth'] <= 0) {
                 killEnemy()
@@ -1831,9 +1957,9 @@ function getTotalBattlestats() {
 }
 
 function changeTitle(newTitle) {
-    title = newTitle
-    document.getElementById("title").textContent = title
-    insertLog(`Title Changed: ${colorGen("#dd8833", `"${title}"`)}`)
+    playerTitle = newTitle
+    document.getElementById("title").textContent = playerTitle
+    insertLog(`Title Changed: ${colorGen("#dd8833", `"${playerTitle}"`)}`)
 }
 
 function genTrainingAreaText(target) {
@@ -1971,11 +2097,11 @@ class scenes {
     }
 
     static trainingGroundsTeamIntro1() {
-        return `"Awesome! I'll tell you everything you need to know. Follow me"\n\n{Continue|trainingGroundsTeamIntro2}`
+        return `"Awesome! I'll tell you everything you need to know. Follow me."\n\n{Continue|trainingGroundsTeamIntro2}`
     }
 
     static trainingGroundsTeamIntro2() {
-        return `You follow the young man in to a large tent on the field\n\n"This is the tent with all our special training equipment and staff. Training here would be 2x as effective than the public equipment."\n\n{Continue|trainingGroundsTeamIntro3}`
+        return `You follow the young man in to a large tent on the field.\n\n"This is the tent with all our special training equipment and staff. Training here would be 2x as effective than the public equipment."\n\n{Continue|trainingGroundsTeamIntro3}`
     }
 
     static trainingGroundsTeamIntro3() {
@@ -2013,13 +2139,16 @@ class scenes {
             checks['dojo'] = true
             return `As you walk into the dojo, an old man greets you.\n\n"Welcome to the dojo. This is the main place in town where fighters of all classes come to train their fighting skills."\n\n{Next|dojo}`
         } else {
-            // if (completedQuests.includes("dojoIntro1") && !checks['dojoIntro1Talked']) {r += `{Dojo Instructor|dojoInstructor}\n`}
-            return `You are in the dojo.\n\n{![chat.png]Dojo Instructor|dojoInstructor}\n{![sword.png]Practice fighting a training dummy|dojo_trainingDummy}\n\n{![leave.png]Leave|townCenter}`
+            let r = `You are in the dojo.\n\n{![chat.png]Dojo Instructor|dojoInstructor}\n{![sword.png]Practice fighting a training dummy|dojo_trainingDummy}\n\n` 
+            if (quests['dojoIntro4'] || completedQuests.includes("dojoIntro4")) {r += `{![park.png]Yard|dojoYard}`}
+            r += `\n{![leave.png]Leave|townCenter}`
+            return r
         }
     }
 
     static dojo_trainingDummy() {
         generateEnemy("strawDummy")
+        if (checks['firstDummy'] != true) {combatData['onDeath'] = "firstTrainingDummy"}
         return `You are practicing fighting against training dummies.\n\n{![stop.png]Stop|dojo|0|endFight}`
     }
 
@@ -2042,20 +2171,68 @@ class scenes {
     }
 
     static dojoInstructorQuest() {
-        if (completedQuests.includes("dojoIntro1") && !checks['dojoIntro1Talked']) {
-            checks['dojoIntro1Talked'] = true
-            giveQuest("dojoIntro2")
-            changeInventory("exercisePill", 1)
-            return `"Good job, you've proven that you're able to do some basic fighting. Unlike real enemies, these dummies don't fight back or move. For your next task: get all your battle stats to 1.5. Then I can give you some real enemies to fight."\n\n{Return|dojo}`
-        } else if (completedQuests.includes("dojoIntro2") && !checks['dojoIntro2Talked']) {
-            checks['dojoIntro2Talked'] = true
-            giveQuest("dojoIntro3")
-            changeInventory("exercisePill", 1)
-            return `"You now have some decent stats, still below the average human in this world but you should now be able do my next quest without issue. Your goal is to defeat 10 mice in the alleys. Visit the hospital if your health drops too low. If you struggle to defeat the mice, I suggest training a bit more."\n\n{Return|dojo}`
-        } else if (completedQuests.includes("dojoIntro3")) {
-            return `"Congratulations on completing all my quests. This is the end of my questline for now, you can still continue training and levelling up your skills. Good luck."\n\n{Return|dojo}`
+        const dojoQuests = [
+            {
+                "quest": "dojoIntro1",
+                "pillReward": 1,
+                "message": "Good job, you've proven that you're able to do some basic fighting. Unlike real enemies, these dummies don't fight back or move. For your next task: get all your battle stats to 1.5. Then I can give you some real enemies to fight."
+            },
+            {
+                "quest": "dojoIntro2",
+                "pillReward": 1,
+                "message": "You now have some decent stats, still below the average human in this world but you should now be able do my next quest without issue. Your goal is to defeat 10 mice in the alleys. Visit the hospital if your health drops too low. If you struggle to defeat the mice, I suggest training a bit more."
+            },
+            {
+                "quest": "dojoIntro3",
+                "pillReward": 2,
+                "message": "Good job, you've proven that you're able to fight real enemies now. Although only small ones, it's still progress. Your next task is to defeat the wooden golem located in the dojo yard. This is significantly harder than the mice but you'll only have to defeat one of them."
+            },
+            {
+                "quest": "dojoIntro4",
+                "pillReward": 5,
+                "message": "Congratulations on beating the golem, there are more available for you to fight if you wish. For my final quest: I want you to reach 10 in every stat. Upon completion you'll gain permission to explore outside of the city. This may take you a while and I wouldn't expect you to complete it quickly. You can continue exploring other areas inside the city while working your way towards completion."
+            },
+            {
+                "quest": "dojoIntro5",
+                "pillReward": 7,
+                "message": "This is the end of my questline for now, you are free to explore outside the city but be careful as there are stronger enemies around."
+            }
+        ]
+        for (let i = 0; i < dojoQuests.length; i++) {
+            if (completedQuests.includes(dojoQuests[i]['quest']) && (checks['dojoQuestIndex'] == undefined || checks['dojoQuestIndex'] < i)) {
+                const quest = dojoQuests[i]
+
+                checks['dojoQuestIndex'] = i
+                if (dojoQuests[i + 1] != undefined) {
+                    giveQuest(dojoQuests[i + 1]['quest'])
+                }
+                changeInventory("exercisePill", quest['pillReward'])
+
+                return `"${quest['message']}"\n\n{![leave.png]Return|dojo}`
+            }
         }
+
         return `"You don't seem to have completed any new quests."\n\n{![leave.png]Return|dojo}`
+    }
+
+    static dojoYard() {
+        return `You are in the yard of the dojo.\n\n{![training_dummy.png]Golems|dojoGolems}\n\n{![leave.png]Return|dojo}`
+    }
+
+    static dojoGolems() {
+        const golemText = [
+            `{Wood Golem|dojo_golemFight|0|generateEnemy(woodGolem,woodGolem)}\n`
+        ]
+        let r = `{Straw Golem|dojo_golemFight|0|generateEnemy(strawGolem,strawGolem)}\n`
+        for (let i = 0; i < checks['golemMax'] || 0; i++) {
+            r += golemText[i]
+        }
+        r += `\n{![leave.png]Return|dojoYard}`
+        return r
+    }
+
+    static dojo_golemFight() {
+        return `You are fighting a golem.\n\n{![leave.png]Return|dojoYard|0|endFight}`
     }
 
     static hospital() {
@@ -2121,6 +2298,7 @@ class sceneFunctions {
     static cancelCrafting() {
         craftingSelection = false
         changeSkill("crafting", -craftInfo['skillXp'])
+        changeTitleXp("crafter", -craftInfo['skillXp'] * 2)
         craftInfo['recipe'] = null
         craftInfo['completed'] = 0
         craftInfo['goal'] = 0
@@ -2129,6 +2307,19 @@ class sceneFunctions {
 
         for (const elem of document.querySelectorAll(".item-selected")) {
             elem.remove()
+        }
+    }
+
+    static generateEnemy(args) {
+        let enemy, onDeath
+        if (typeof args == "string") {
+            enemy = args
+        } else {
+            [enemy, onDeath] = args
+        }
+        generateEnemy(enemy)
+        if (onDeath) {
+            combatData['onDeath'] = onDeath
         }
     }
 }
@@ -2209,7 +2400,8 @@ function processText(text) {
             button.addEventListener("click", function() {
                 if (splitLinks[num][3] == undefined || splitLinks[num][3] == 0) {
                     if (splitLinks[num][4] != undefined) {
-                        sceneFunctions[splitLinks[num][4]]()
+                        let params = splitLinks[num][5] ? (splitLinks[num][5].includes(",") ? splitLinks[num][5].split(",") : splitLinks[num][5]) : undefined
+                        sceneFunctions[splitLinks[num][4]](params)
                     }
                     sceneManager(splitLinks[num][2])
                 } else {
@@ -2235,7 +2427,7 @@ function sceneManager(selected) {
 
 function makeSave() {
     let base = {
-        money, time, health, xp, title, battleStats, skills, energy, noSleepTime, effects, // Stats
+        money, time, health, xp, title: playerTitle, battleStats, skills, energy, noSleepTime, effects, titleScores, // Stats
         inventory, inventoryNonStackable, inventoryNonStackableIncrement, storage, storageNonStackable, storageAccess, shopStorage, // Inventory
         combatData, equipment, team, // Combat
         oldScene, currentScene, sceneText, // Scenes
@@ -2289,7 +2481,7 @@ function loadFromLocal(slot="save1") {
 
 function loadSave(dict) {
     ({
-        money, time, battleStats, energy, noSleepTime, // Stats
+        money, time, battleStats, energy, noSleepTime, titleScores, // Stats
         inventoryNonStackableIncrement, shopStorage, // Inventory
         combatData, team, // Combat
         oldScene, currentScene, sceneText, // Scenes
