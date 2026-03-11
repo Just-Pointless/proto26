@@ -1,4 +1,4 @@
-const VERSION = "0.12"
+const VERSION = "0.13"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -7,6 +7,7 @@ var time = 420
 var oldScene = ""
 var currentScene = ""
 var sceneText = ""
+var prependText = ""
 var health = 10
 var xp = 0
 var playerTitle = "Unknown"
@@ -84,6 +85,7 @@ var exploreData = {
 var saveEnabled = true
 var craftingSelection = false
 var titleScores = {}
+var arenaData = {}
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}(]+)?\(?([^(){}|]+)?\)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -139,6 +141,9 @@ const enemyData = {
         "spd": 5,
         "dex": 2,
         "xp": 60
+    },
+    "human": {
+        "name": "Human"
     }
 }
 const skillData = {
@@ -416,15 +421,33 @@ const titleData = {
     "crafter": {"name": "Crafter"},
     "sleeper": {"name": "Sleeper"}
 }
+const arenaStatData = [
+    {"health": [30, 40], "stats": [4,6], "reward": 10},
+    {"health": [60, 80], "stats": [10,15], "reward": 20},
+    {"health": [120, 150], "stats": [20,30], "reward": 30},
+    {"health": [200, 300], "stats": [50,100], "reward": 50},
+    {"health": [400, 600], "stats": [200,300], "reward": 70},
+    {"health": [800, 1_000], "stats": [600,800], "reward": 100}
+]
+
+function getDayName(date=null) {
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    if (date == null) {
+        return getDayName(minutesToDate(time))
+    }
+    return dayNames[date.getDay()]
+}
+
+function minutesToDate(time) {
+    const baseDate = new Date(1900, 0, 1)
+    baseDate.setMinutes(baseDate.getMinutes() + time)
+    return baseDate
+}
 
 function formatTime(time, timeOnly=false) {
-    const baseDate = new Date(1900, 0, 1)
+    const baseDate = minutesToDate(time)
 
-    baseDate.setMinutes(baseDate.getMinutes() + time)
-
-    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-
-    const dayName = dayNames[baseDate.getDay()]
+    const dayName = getDayName(baseDate)
 
     const year = baseDate.getFullYear()
     const month = String(baseDate.getMonth() + 1).padStart(2, "0")
@@ -440,8 +463,8 @@ function formatTime(time, timeOnly=false) {
     return `${dayName} ${year}/${month}/${date} ${timeString}`
 }
 
-function getDay(time) {
-    return Math.ceil((time + 1) / 1440)
+function getDay(timeNow=time) {
+    return Math.ceil((timeNow + 1) / 1440)
 }
 
 function xpToLevel(xp, decimals = false, r = 1.1) {
@@ -587,9 +610,9 @@ function randomRange(min, max, decimals=-1) {
     return Math.round(value * factor) / factor
 }
 
-function generateEnemy(enemyName) {
+function generateEnemy(enemyName, stats=null) {
     combatData['enemy'] = enemyName
-    const enemy = enemyData[enemyName]
+    const enemy = stats || enemyData[enemyName]
     combatData['enemyProperties'] = enemy['properties']
     if (Array.isArray(enemy['health'])) {
         combatData['enemyMaxHealth'] = randomRange(enemy['health'][0], enemy['health'][1], 0)
@@ -608,7 +631,7 @@ function generateEnemy(enemyName) {
         document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
     }
 
-    document.getElementById("enemy-name").textContent = enemy['name']
+    document.getElementById("enemy-name").textContent = enemy['name'] || enemyData[enemyName]['name']
     updateBar("enemyHealth")
 
     document.getElementById("attack-info-left").style.display = ""
@@ -750,6 +773,14 @@ function formatNumber(num, round=false) {
     }
 }
 
+function englishifyNumber(n) {
+    var special = ["zeroth","first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth"]
+    var deca = ["twent", "thirt", "fort", "fift", "sixt", "sevent", "eight", "ninet"]
+    if (n < 20) return special[n]
+    if (n%10 === 0) return deca[Math.floor(n/10)-2] + "ieth"
+    return deca[Math.floor(n/10)-2] + "y-" + special[n%10]
+}
+
 function getMovementSpeed() {
     let inventoryMulti = 1
     if (inventoryWeight > 0) {
@@ -879,7 +910,7 @@ function changeInventory(item, amount, announceReduction=false, itemId=null, new
     }
 }
 
-function changeStorage(item, amount, itemId=null, newItemData=null) {
+function changeStorage(item, amount, itemId=null, newItemData=null, announce=true) {
     if (itemData[item]['stackable'] !== false) {
         if (storage[item] == undefined) {
             if (amount <= 0) {return false}
@@ -905,7 +936,7 @@ function changeStorage(item, amount, itemId=null, newItemData=null) {
             document.getElementById(`storage-item-${item}_${itemId}`).remove()
         }
     }
-    if (amount > 0) {
+    if (amount > 0 && announce == true) {
         insertLog(`Deposited ${genItemLogText(item, amount)}`, [itemData[item]['name'], itemData[item]['desc']])
     }
 }
@@ -1018,10 +1049,11 @@ function changeTime(amount) {
     } else {
         stats['timeSlept'] += amount
     }
-    // if (time >= 1440) {
-    //     time -= 1440
-    //     day += 1
-    // }
+
+    if (Math.floor((time - amount) / 1440) < Math.floor(time / 1440)) {
+        delete checks['arenaParticipated']
+    }
+    document.getElementById("center-top").textContent = formatTime(time)
 }
 
 function changeEffect(effect, enable=true, duration=0, absolute=false) {
@@ -1079,6 +1111,16 @@ function changeHp(amount) {
 
     if (health <= 0) {
         endFight()
+        if (currentScene == "theArenaFight") {
+            if (arenaData['round'] >= 2) {
+                prependText = `${colorGen("#ffee00", `You received $${arenaStatData[arenaData['round'] - 2]['reward']} for participating`)}\n\n`
+                changeMoney(arenaStatData[arenaData['round'] - 2]['reward'])
+                if (team == "nextLevel") {
+                    checks['nextLevelExercisePills'] = Math.round(arenaStatData[arenaData['round'] - 2]['reward'] / 10)
+                }
+            }
+            arenaData = {}
+        }
         playTransition()
         sceneManager("sleep")
         insertLog(colorGen("#ff0000", "You died!"))
@@ -1497,6 +1539,9 @@ function onDeathFunctions(name) {
         playTransition()
         sceneManager("dojoYard")
         //checks['golemMax'] = Math.max(checks['golemMax'] || 0, 2)
+    } else if (name == "arenaWinMatch") {
+        playTransition()
+        sceneManager("theArenaWinMatch")
     }
 }
 
@@ -1569,6 +1614,21 @@ const sceneTicks = new Map([
         changeSkill("training", 1)
         changeTitleXp("athlete", 1)
         changeEnergy(-0.2)
+    }],
+    ["theArenaWinMatch", function() {
+        if (time >= arenaData['endTime']) {
+            delete arenaData['endTime']
+            playTransition()
+            sceneManager("theArenaWalkIn")
+        }
+    }],
+    ["theArenaMedbay", function() {
+        changeHp(2)
+        if (time >= arenaData['endTime']) {
+            delete arenaData['endTime']
+            playTransition()
+            sceneManager("theArenaWalkIn")
+        }
     }]
 ])
 
@@ -1759,8 +1819,6 @@ function tick() {
     // updateStats() No longer needed as changestat function updates it
 
     updateTooltip()
-
-    document.getElementById("center-top").textContent = formatTime(time)
 }
 
 setInterval(tick, 1000)
@@ -2115,7 +2173,10 @@ class scenes {
     }
 
     static trainingGrounds_nextLevel() {
-        return `You are inside your team's tent.\n\n${genTrainingAreaText("trainingGrounds_nextLevel")}\n\n{![leave.png]Leave|trainingGrounds}`
+        let r = `You are inside your team's tent.`
+        if (checks['nextLevelExercisePills']) {r += `\n\n{Claim Exercise Pills|trainingGrounds_nextLevel|0|nextLevelClaimExercisePill}`}
+        r += `\n\n${genTrainingAreaText("trainingGrounds_nextLevel")}\n\n{![leave.png]Leave|trainingGrounds}`
+        return r
     }
 
     static trainingGrounds_nextLevel_str() {
@@ -2265,7 +2326,7 @@ class scenes {
     }
 
     static townNorth() {
-        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{![park.png]Park|park}\n{![sword.png]Weapon Shop|weaponShop}\n\n{![town_center.png]Town Center|townCenter|250}`
+        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{![park.png]Park|park}\n{![sword.png]Weapon Shop|weaponShop}\n{![sword.png]The Arena|theArenaEntrance}\n\n{![town_center.png]Town Center|townCenter|250}`
     }
 
     static park() {
@@ -2278,6 +2339,73 @@ class scenes {
 
     static weaponShop() {
         return `"Welcome to my weapon shop, I craft and import weapons from various places. Don't think about stealing, you are in a weapon shop after all."\n\n{![leave.png]Leave|townNorth}`
+    }
+
+    static theArenaEntrance() {
+        arenaData = {}
+        let r = `You are in the entrance of the arena.`
+        r += getDayName() == "Sunday" ? `It's quite crowded with many people rushing to join the queue for tickets.${checks['arenaParticipated'] == undefined ? "\n\n{![sword.png]Participate|theArenaSignup}" : ""}` : " It's quite empty, more people would be here on a Sunday."
+        r += `\n\n{![leave.png]Leave|townNorth}`
+        return r
+    }
+
+    static theArenaSignup() {
+        let r = `You join the signup queue and patiently wait for your turn.\n\n`
+        r += getTotalBattlestats() >= 20 ? `"Hello, would you like to participate in the matches?"\n\n{![tick.png]Yes|theArenaSignupIntro1}\n{![cross.png]No|theArenaEntrance}` : `"Unfortunately you do not meet the minimum requirements. Come back when you have a rank of ${colorGen("#88bb00", "G-")} or higher."\n\n{![leave.png]Leave|theArenaEntrance}`
+        return r
+    }
+
+    static theArenaSignupIntro1() {
+        return `"Great, please head towards the doors over there."\n\n{![enter.png]Enter|theArenaSignupIntro2}`
+    }
+
+    static theArenaSignupIntro2() {
+        arenaData['round'] = 1
+        checks['arenaParticipated'] = true
+        return `"Welcome to The Arena, fighter. You will be participating in a series of matches against opponents that get increasingly stronger with one loss resulting in elimination. This is the biggest event in this town with hundreds of participants and thousands of spectators. You get up to a 60 minute break after every match. Best of luck, you can begin when you're ready."\n\n{![enter.png]Begin|theArenaWalkIn}`
+    }
+
+    static theArenaWalkIn() {
+        delete arenaData['endTime']
+        return `You walk into the arena and prepare to fight your opponent.\n\nThe organiser shouts, "This is round ${arenaData['round']}, get ready."\n\n{![sword.png]Fight|theArenaFight}`
+    }
+
+    static theArenaFight() {
+        const newStats = arenaStatData[arenaData['round'] - 1]
+        generateEnemy("human", {
+            "health": newStats['health'],
+            "str": newStats['stats'],
+            "def": newStats['stats'],
+            "spd": newStats['stats'],
+            "dex": newStats['stats']
+        })
+        combatData['onDeath'] = "arenaWinMatch"
+        return `You are currently fighting your opponent in The Arena.`
+    }
+
+    static theArenaWinMatch() {
+        let r = ""
+        if (team == "nextLevel" && checks['nextLevelCongrats'] == false) {
+            r += `A member of your team runs towards you\n\n"Congrats on winning your first match, you did great in there"\n\n`
+            checks['nextLevelCongrats'] = true
+        } else {
+            r += `"Good job contestant on winning your ${englishifyNumber(arenaData['round'])} round, the next round will begin shortly."`
+        }
+        r += `\n\n{![enter.png]Begin Immediately|theArenaWalkIn}\n\n{![hospital.png]Medbay|theArenaMedbay}\n\n{![leave.png]Resign|theArenaEntrance|0|theArenaResign}`
+        arenaData['endTime'] = time + 60
+        arenaData['round'] += 1
+        return r
+    }
+
+    static theArenaMedbay() {
+        let r = ""
+        if (health < calcMaxHp()) {
+            r += `You are getting healed by a doctor...`
+        } else {
+            r += `You are already at maximum health.`
+        }
+        r += `\n\n{![leave.png]Leave|theArenaWinMatch}`
+        return r
     }
 }
 
@@ -2321,6 +2449,20 @@ class sceneFunctions {
         if (onDeath) {
             combatData['onDeath'] = onDeath
         }
+    }
+
+    static theArenaResign() {
+        prependText = `You resigned from The Arena\n\n${colorGen("#ffee00", `You received $${arenaStatData[arenaData['round'] - 2]['reward']} for participating`)}\n\n`
+        changeMoney(arenaStatData[arenaData['round'] - 2]['reward'])
+        if (team == "nextLevel") {
+            checks['nextLevelExercisePills'] = Math.round(arenaStatData[arenaData['round'] - 2]['reward'] / 10)
+        }
+        arenaData = {}
+    }
+
+    static nextLevelClaimExercisePill() {
+        changeInventory("exercisePill", checks['nextLevelExercisePills'])
+        delete checks['nextLevelExercisePills']
     }
 }
 
@@ -2419,7 +2561,8 @@ function processText(text) {
 
 function sceneManager(selected) {
     const selectedScene = scenes[selected]()
-    processText(selectedScene)
+    processText((prependText || "") + selectedScene)
+    prependText = ""
     if (sceneEndFunctions[selected]) {sceneEndFunctions[selected]()}
     oldScene = currentScene
     currentScene = selected
@@ -2429,13 +2572,14 @@ function makeSave() {
     let base = {
         money, time, health, xp, title: playerTitle, battleStats, skills, energy, noSleepTime, effects, titleScores, // Stats
         inventory, inventoryNonStackable, inventoryNonStackableIncrement, storage, storageNonStackable, storageAccess, shopStorage, // Inventory
-        combatData, equipment, team, // Combat
+        combatData, equipment, team, arenaData, // Combat
         oldScene, currentScene, sceneText, // Scenes
         quests, completedQuests, checks, // Quests
         stats, // Stats
         knownRecipes, craftInfo, craftingSelection, // Crafting
         exploreData, travelInfo, // Exploration
     }
+    base['version'] = VERSION
     return base
 }
 
@@ -2481,9 +2625,9 @@ function loadFromLocal(slot="save1") {
 
 function loadSave(dict) {
     ({
-        money, time, battleStats, energy, noSleepTime, titleScores, // Stats
+        time, battleStats, energy, noSleepTime, titleScores, // Stats
         inventoryNonStackableIncrement, shopStorage, // Inventory
-        combatData, team, // Combat
+        combatData, team, arenaData, // Combat
         oldScene, currentScene, sceneText, // Scenes
         quests, completedQuests, checks, // Quests
         stats, // Stats
@@ -2556,6 +2700,7 @@ function loadSave(dict) {
     }
 
     changeXp(dict['xp'])
+    changeMoney(dict['money'])
     health = dict['health']
     updateBar("health")
     updateBar("energy")

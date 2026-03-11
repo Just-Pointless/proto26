@@ -1,3 +1,10 @@
+v0.13
+- Add The Arena
+- Add time helper functions
+- Fix money not updating on save load
+- Move time formatter to changeTime function
+- Include version in saves
+
 v0.12
 - Implement title system
 - Expand dojo questline
