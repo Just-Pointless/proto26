@@ -1,4 +1,4 @@
-const VERSION = "0.13"
+const VERSION = "0.14"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -2568,9 +2568,17 @@ function sceneManager(selected) {
     currentScene = selected
 }
 
-function makeSave() {
+function objectEmpty(obj) {
+    return Object.keys(obj).length === 0
+}
+
+function makeSave() { // Optimisation at all costs
+    function removeEmpty(key, obj) {
+        if (objectEmpty(obj[key])) {obj[key] = undefined}
+    }
+
     let base = {
-        money, time, health, xp, title: playerTitle, battleStats, skills, energy, noSleepTime, effects, titleScores, // Stats
+        money, time, health, xp, playerTitle, battleStats, skills, energy, noSleepTime, effects, titleScores, // Stats
         inventory, inventoryNonStackable, inventoryNonStackableIncrement, storage, storageNonStackable, storageAccess, shopStorage, // Inventory
         combatData, equipment, team, arenaData, // Combat
         oldScene, currentScene, sceneText, // Scenes
@@ -2580,6 +2588,48 @@ function makeSave() {
         exploreData, travelInfo, // Exploration
     }
     base['version'] = VERSION
+    // Stats
+    if (base['money'] == 0) {delete base['money']}
+    for (const [stat, value] of Object.entries(base['battleStats'])) {
+        base['battleStats'][stat] = Math.round(value * 1000) / 1000
+    }
+    base['energy'] = Math.round(base['energy'] * 1000) / 1000
+    removeEmpty("skills", base)
+    removeEmpty("effects", base)
+    for (const [title, value] of Object.entries(base['titleScores'])) {
+        base['titleScores'][title] = Math.round(value * 1000) / 1000
+    }
+    removeEmpty("titleScores", base)
+
+    // Combat
+    if (base['combatData']['enemy'] == null) {base['combatData'] = undefined}
+    base['equipment'] = Object.fromEntries(Object.entries(base['equipment']).filter(([key, value]) => value !== null))
+    removeEmpty("equipment", base)
+    if (base['team'] == "none") {base['team'] = undefined}
+    removeEmpty("arenaData", base)
+    
+    // Inventory
+    removeEmpty("inventory", base)
+    removeEmpty("inventoryNonStackable", base)
+    removeEmpty("storage", base)
+    removeEmpty("storageNonStackable", base)
+    if (base['storageAccess'] == false) {base['storageAccess'] = undefined}
+    removeEmpty("shopStorage", base)
+
+    // Quests
+    removeEmpty("quests", base)
+    removeEmpty("completedQuests", base)
+    removeEmpty("checks", base)
+
+    // Crafting
+    if (base['craftInfo']['recipe'] == null && base['craftInfo']['selected'] == null) {base['craftInfo'] = undefined}
+    if (base['craftingSelection'] == false) {base['craftingSelection'] = undefined}
+
+    // Exploration
+    if (base['exploreData']['area'] == null) {base['exploreData'] = undefined}
+    if (base['travelInfo']['destination'] == null) {base['travelInfo'] = undefined}
+
+    base = Object.fromEntries(Object.entries(base).filter(([key, value]) => value !== undefined))
     return base
 }
 
@@ -2624,55 +2674,98 @@ function loadFromLocal(slot="save1") {
 }
 
 function loadSave(dict) {
-    ({
-        time, battleStats, energy, noSleepTime, titleScores, // Stats
-        inventoryNonStackableIncrement, shopStorage, // Inventory
-        combatData, team, arenaData, // Combat
-        oldScene, currentScene, sceneText, // Scenes
-        quests, completedQuests, checks, // Quests
-        stats, // Stats
-        knownRecipes, craftInfo, craftingSelection, // Crafting
-        exploreData, travelInfo, // Exploration
-    } = dict)
+    // Stats
+    time = dict['time'] ?? time
+    battleStats = dict['battleStats'] ?? battleStats
+    energy = dict['energy'] ?? energy
+    noSleepTime = dict['noSleepTime'] ?? noSleepTime
+    titleScores = dict['titleScores'] ?? titleScores
+    
+    // Inventory
+    inventoryNonStackableIncrement = dict['inventoryNonStackableIncrement'] ?? inventoryNonStackableIncrement
+    shopStorage = dict['shopStorage'] ?? shopStorage
+    
+    // Combat
+    combatData = dict['combatData'] ?? combatData
+    team = dict['team'] ?? team
+    arenaData = dict['arenaData'] ?? arenaData
 
-    for (const [item, amount] of Object.entries(dict['inventory'])) {
-        changeInventory(item, amount)
-    }
-    for (const [item, amount] of Object.entries(dict['storage'])) {
-        changeStorage(item, amount)
-    }
+    // Scenes
+    oldScene = dict['oldScene'] ?? oldScene
+    currentScene = dict['currentScene'] ?? currentScene
+    sceneText = dict['sceneText'] ?? sceneText
 
-    for (const [id, data] of Object.entries(dict['inventoryNonStackable'])) {
-        const item = data['name']
-        changeInventory(item, 1, false, id, data)
-    }
-    for (const [id, data] of Object.entries(dict['storageNonStackable'])) {
-        const item = data['name']
-        changeStorage(item, 1, id, data)
-    }
+    // Quests
+    quests = dict['quests'] ?? quests
+    completedQuests = dict['completedQuests'] ?? completedQuests
+    checks = dict['checks'] ?? checks
 
-    for (const [item, data] of Object.entries(dict['equipment'])) {
-        if (data != null) {
-            changeEquipment(data[1])
+    // Stats
+    stats = dict['stats'] ?? stats
+
+    // Crafting
+    knownRecipes = dict['knownRecipes'] ?? knownRecipes
+    craftInfo = dict['craftInfo'] ?? craftInfo
+    craftingSelection = dict['craftingSelection'] ?? craftingSelection
+
+    // Exploration
+    exploreData = dict['exploreData'] ?? exploreData
+    travelInfo = dict['travelInfo'] ?? travelInfo
+
+    if (dict['inventory']) {
+        for (const [item, amount] of Object.entries(dict['inventory'])) {
+            changeInventory(item, amount)
+        }
+    }
+    if (dict['storage']) {
+        for (const [item, amount] of Object.entries(dict['storage'])) {
+            changeStorage(item, amount)
         }
     }
 
-    for (const [skill, xp] of Object.entries(dict['skills'])) {
-        changeSkill(skill, xp)
+    if (dict['inventoryNonStackable']) {
+        for (const [id, data] of Object.entries(dict['inventoryNonStackable'])) {
+            const item = data['name']
+            changeInventory(item, 1, false, id, data)
+        }
+    }
+    if (dict['storageNonStackable']) {
+        for (const [id, data] of Object.entries(dict['storageNonStackable'])) {
+            const item = data['name']
+            changeStorage(item, 1, id, data)
+        }
     }
 
-    for (const [effect, time] of Object.entries(dict['effects'])) {
-        changeEffect(effect, true, time, true)
+    if (dict['equipment']) {
+        for (const [item, data] of Object.entries(dict['equipment'])) {
+            if (data != null) {
+                changeEquipment(data[1])
+            }
+        }
+    }
+    
+    if (dict['skills']) {
+        for (const [skill, xp] of Object.entries(dict['skills'])) {
+            changeSkill(skill, xp)
+        }
     }
 
-    for (const itemId of dict['craftInfo']['using']) {
-        const inventorySlot = document.getElementById(`item-${inventoryNonStackable[itemId]['name']}_${itemId}`)
-        if (inventorySlot) {
-            const itemSelected = document.createElement("span")
-            itemSelected.className = "item-selected"
-            itemSelected.textContent = "S"
+    if (dict['effects']) {
+        for (const [effect, time] of Object.entries(dict['effects'])) {
+            changeEffect(effect, true, time, true)
+        }
+    }
 
-            inventorySlot.appendChild(itemSelected)
+    if (dict['craftInfo']) {
+        for (const itemId of dict['craftInfo']['using']) {
+            const inventorySlot = document.getElementById(`item-${inventoryNonStackable[itemId]['name']}_${itemId}`)
+            if (inventorySlot) {
+                const itemSelected = document.createElement("span")
+                itemSelected.className = "item-selected"
+                itemSelected.textContent = "S"
+
+                inventorySlot.appendChild(itemSelected)
+            }
         }
     }
 
@@ -2691,23 +2784,27 @@ function loadSave(dict) {
         document.getElementById("attack-info-right").style.display = ""
     }
 
-    for (const quest in dict['quests']) {
-        giveQuest(quest)
+    if (dict['quests']) {
+        for (const quest in dict['quests']) {
+            giveQuest(quest)
+        }
     }
 
-    for (const quest of dict['completedQuests']) {
-        giveQuest(quest, complete=true)
+    if (dict['completedQuests']) {
+        for (const quest of dict['completedQuests']) {
+            giveQuest(quest, complete=true)
+        }
     }
 
     changeXp(dict['xp'])
-    changeMoney(dict['money'])
+    changeMoney(dict['money'] || 0)
     health = dict['health']
     updateBar("health")
     updateBar("energy")
     document.getElementById("center-top").textContent = formatTime(time)
 
     if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
-    if (dict['title'] != "Unknown") {changeTitle(dict['title'])}
+    if (dict['playerTitle'] != "Unknown") {changeTitle(dict['playerTitle'])}
 
     processText(sceneText)
     if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
