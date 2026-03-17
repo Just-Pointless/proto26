@@ -12,7 +12,10 @@
 
 <body>
     <div id="center">
-        <div id="center-top">Monday 1900/01/01 07:00</div>
+        <div id="center-top">
+            <span id="weather" style="color: #bbbbbb; background-color: #383838;">Clear</span>
+            <span id="time">Monday 1900/01/01 07:00</span>
+        </div>
         <div id="main-transition"></div>
         <div id="main"></div>
     </div>
@@ -50,6 +53,7 @@
             <button class="menu-button" id="skills-button">Skills</button>
             <button class="menu-button" id="storage-button" style="display: none;">Storage</button>
             <button class="menu-button" id="quests-button" style="display: none;">Quests</button>
+            <button class="menu-button" id="debug-button" style="display: none;">Debug</button>
         </div>
 
         <div class="sidebar-menu" id="sidebar-menu-inventory">
@@ -110,6 +114,27 @@
             <div id="quests-table"></div>
             <div class="sidebar-menu-title" id="completed-quests-header" style="display: none;">Completed</div>
             <div id="completed-quests-table" style="display: none;"></div>
+        </div>
+
+        <div class="sidebar-menu" id="sidebar-menu-debug" style="display: none; text-align: center;">
+            <div class="sidebar-menu-title">Debug</div>
+            <div class="debug-header">Stats</div>
+            <input id="debug-stat-input" placeholder="Value">
+            <br>
+            <button id="debug-change-str">Str</button>
+            <button id="debug-change-def">Def</button>
+            <button id="debug-change-spd">Spd</button>
+            <button id="debug-change-dex">Dex</button>
+            <p></p>
+            <div class="debug-header">Scenes</div>
+            <button id="debug-reload-scene">Reload</button>
+            <div id="debug-scene-jump-container">
+                <input type="text" id="debug-scene-jump-input" placeholder="Scene Name">
+                <div id="debug-scene-jump-autocomplete-suggestions"></div>
+            </div>
+            <p></p>
+            <div class="debug-header">Weather</div>
+            <div id="weather-chances" style="white-space: pre;"></div>
         </div>
     </div>
     <div id="bottombar">

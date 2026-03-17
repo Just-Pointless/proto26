@@ -1,4 +1,4 @@
-const VERSION = "0.14"
+const VERSION = "0.15"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -86,6 +86,7 @@ var saveEnabled = true
 var craftingSelection = false
 var titleScores = {}
 var arenaData = {}
+var debugEnabled = false
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}(]+)?\(?([^(){}|]+)?\)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -288,6 +289,11 @@ const effectData = {
         "name": "Exercise Pill",
         "desc": "Stat gain is increased by 50%",
         "color": "#cccc00"
+    },
+    "wet": {
+        "name": "Wet",
+        "desc": "Energy loss is increased",
+        "color": "#5555ff"
     }
 }
 const questData = {
@@ -429,6 +435,7 @@ const arenaStatData = [
     {"health": [400, 600], "stats": [200,300], "reward": 70},
     {"health": [800, 1_000], "stats": [600,800], "reward": 100}
 ]
+const statTypes = ["str", "def", "spd", "dex"]
 
 function getDayName(date=null) {
     const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -539,16 +546,43 @@ function updateBar(bar) {
 function updateBattlestats(statName=null) {
     for (const [stat, value] of Object.entries(battleStats)) {
         if (statName == null || stat == statName) {
-            const effectiveStat = value * calcEnergyDebuff()
+            const effectiveStat = value * calcStatDebuff(stat)
             const debuffPercentage = effectiveStat / value * 100 - 100
             document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
-            document.getElementById(`stat-total`).textContent = `Ttl: ${formatNumber(getTotalBattlestats())}`
+        }
+    }
+    document.getElementById(`stat-total`).textContent = `Ttl: ${formatNumber(getTotalBattlestats())}`
+}
+
+function updateEnemyBattlestats(statName=null) {
+    for (const [stat, value] of Object.entries(combatData['enemyStats'])) {
+        if ((statName == null || stat == statName) && value != 0) {
+            const effectiveStat = value * calcEnemyStatDebuff(stat)
+            const debuffPercentage = effectiveStat / value * 100 - 100
+            document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
         }
     }
 }
 
 function colorGen(hex, text) {
     return "<span style=\"color: " + hex + "\">" + text + "</span>"
+}
+
+function darkenHexColor(hex, percent) {
+    hex = hex.replace("#", "")
+
+    let r = parseInt(hex.substring(0, 2), 16)
+    let g = parseInt(hex.substring(2, 4), 16)
+    let b = parseInt(hex.substring(4, 6), 16)
+
+    r = Math.max(0, r - (r * percent / 100))
+    g = Math.max(0, g - (g * percent / 100))
+    b = Math.max(0, b - (b * percent / 100))
+
+    r = Math.round(r).toString(16).padStart(2, "0")
+    g = Math.round(g).toString(16).padStart(2, "0")
+    b = Math.round(b).toString(16).padStart(2, "0")
+    return `#${r}${g}${b}`
 }
 
 document.getElementById("log").addEventListener("scroll", function() {
@@ -621,15 +655,14 @@ function generateEnemy(enemyName, stats=null) {
     }
     combatData['enemyHealth'] = combatData['enemyMaxHealth']
 
-    const statTypes = ["str", "def", "spd", "dex"]
     for (const stat of statTypes) {
         if (Array.isArray(enemy[stat])) {
             combatData['enemyStats'][stat] = randomRange(enemy[stat][0], enemy[stat][1], 2)
         } else {
             combatData['enemyStats'][stat] = enemy[stat]
         }
-        document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
     }
+    updateEnemyBattlestats()
 
     document.getElementById("enemy-name").textContent = enemy['name'] || enemyData[enemyName]['name']
     updateBar("enemyHealth")
@@ -1031,14 +1064,145 @@ function changeEnergy(amount) {
         insertLog(colorGen("#aaaaaa", "You start to feel tired"))
     }
 
-    for (const [stat, value] of Object.entries(battleStats)) {
-        const effectiveStat = value * calcEnergyDebuff()
-        const debuffPercentage = effectiveStat / value * 100 - 100
-        document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
-    }
-    document.getElementById(`stat-total`).textContent = `Ttl: ${formatNumber(getTotalBattlestats())}`
-
     updateBar("energy")
+}
+
+var weather = "clear"
+var weatherStartTime = time
+const weatherData = {
+    "clear": {
+        "changes": {
+            "sunny": {"chance": 40, "check": function() {return ["morning", "afternoon"].includes(getTimeName())}},
+            "foggy": {"chance": function() {return getTimeName() == "night" ? 40 : 8}},
+            "overcast": {"chance": 10},
+            "noChange": {"chance": 10000}
+        },
+        "minTime": 30
+    },
+    "sunny": {
+        "changes": {
+            "clear": {"chance": 40},
+            "noChange": {"chance": 10000}
+        },
+        "minTime": 30,
+        "terminate": function() {return !["morning", "afternoon"].includes(getTimeName())}
+    },
+    "foggy": {
+        "changes": {
+            "clear": {"chance": 100},
+            "noChange": {"chance": 10000}
+        },
+        "minTime": 20
+    },
+    "overcast": {
+        "changes": {
+            "clear": {"chance": 100},
+            "rain": {"chance": 200},
+            "noChange": {"chance": 10000}
+        },
+        "minTime": 5
+    },
+    "rain": {
+        "changes": {
+            "clear": {"chance": 100},
+            "overcast": {"chance": 25},
+            "noChange": {"chance": 10000}
+        },
+        "minTime": 10
+    }
+}
+const weatherAppearance = {
+    "clear": {"name": "Clear", "color": "#bbbbbb"},
+    "sunny": {"name": "Sunny", "color": "#ffcc00"},
+    "foggy": {"name": "Foggy", "color": "#777777", "tooltip": "Speed is reduced by 25%"},
+    "overcast": {"name": "Overcast", "color": "#7777aa"},
+    "rain": {"name": "Rain", "color": "#5555ff"}
+}
+
+function processWeatherWeights(changes, multi=1) {
+    const weights = {}
+
+    for (const [weather, data] of Object.entries(changes)) {
+        if (data['check'] && !data['check']()) {continue}
+
+        weights[weather] = typeof data.chance == "function" ? data['chance']() : data['chance']
+    }
+
+    if (weights['noChange']) {
+        if (multi == 0) {delete weights['noChange']}
+        else {weights['noChange'] = weights['noChange'] / multi}
+    }
+
+    return weights
+}
+
+function getWeatherChances(changes, multi=1) {
+    const weights = processWeatherWeights(changes, multi)
+    const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0)
+    const chances = {}
+
+    for (const [weather, weight] of Object.entries(weights)) {
+        chances[weather] = (weight / totalWeight) * 100
+    }
+
+    return chances
+}
+
+function getRandomWeather(changes, multi=1) {
+    const weights = processWeatherWeights(changes, multi)
+    const totalWeight = Object.values(weights).reduce((sum, weight) => sum + weight, 0)
+    
+    let randomNum = Math.random() * totalWeight
+    
+    for (let item in weights) {
+        randomNum -= weights[item]
+        
+        if (randomNum <= 0) {
+            return item
+        }
+    }
+
+    return "noChange"
+}
+
+function changeWeather(newWeather) {
+    weather = newWeather
+    weatherStartTime = time
+    const weatherElem = document.getElementById("weather")
+    weatherElem.textContent = weatherAppearance[newWeather]['name']
+    weatherElem.style.color = weatherAppearance[newWeather]['color']
+    weatherElem.style.backgroundColor = darkenHexColor(weatherAppearance[newWeather]['color'], 70)
+    if (weatherAppearance[newWeather]['tooltip']) {
+        weatherElem.setAttribute("data-tooltip-title", weatherAppearance[newWeather]['name'])
+        weatherElem.setAttribute("data-tooltip-text", weatherAppearance[newWeather]['tooltip'])
+    } else {
+        weatherElem.removeAttribute("data-tooltip-title")
+        weatherElem.removeAttribute("data-tooltip-text")
+    }
+}
+
+function updateWeather(multi=1) {
+    const weatherState = weatherData[weather]
+    if (time - weatherStartTime < weatherState['minTime']) {
+        if (weatherState['terminate'] && weatherState['terminate']()) {
+            changeWeather(getRandomWeather(weatherState['changes'], 0))
+        }
+    } else {
+        const newWeather = getRandomWeather(weatherState['changes'], multi)
+        if (newWeather != "noChange") {
+            changeWeather(newWeather)
+        }
+    }
+
+    if (debugEnabled) {
+        const chances = getWeatherChances(weatherState['changes'], 1)
+        const chances60 = getWeatherChances(weatherState['changes'], 60)
+        outputText = ""
+        for (const [weather, chance] of Object.entries(chances)) {
+            outputText += `${weather}: ${chance.toFixed(2)}% (${chances60[weather].toFixed(2)}%)\n`
+        }
+        document.getElementById("weather-chances").textContent = outputText
+    }
 }
 
 function changeTime(amount) {
@@ -1053,7 +1217,32 @@ function changeTime(amount) {
     if (Math.floor((time - amount) / 1440) < Math.floor(time / 1440)) {
         delete checks['arenaParticipated']
     }
-    document.getElementById("center-top").textContent = formatTime(time)
+    if (sceneProperties[currentScene]) {
+        if (sceneProperties[currentScene].includes("outdoors") && weather == "rain") {
+            if (!effects['wet'] || effects['wet'] - time < 60) {
+                changeEffect("wet", true, 5)
+            }
+        }
+    }
+
+    if (currentScene != "sleep") {changeEnergy(-0.05 * amount)}
+
+    for (const effect in effects) {
+        const handler = effectFunctions.get(effect)
+        if (handler) {handler(amount)}
+    }
+    updateWeather(amount)
+    document.getElementById("time").textContent = formatTime(time)
+}
+
+function getTimeName() {
+    const timeOffset = time % 1440
+    if (timeOffset < 360) {return "night"} // 00:00 - 05:59
+    else if (timeOffset < 720) {return "morning"} // 06:00 - 11:59
+    else if (timeOffset < 1080) {return "afternoon"} // 12:00 - 17:59
+    else if (timeOffset < 1260) {return "evening"} // 18:00 - 21:59
+    else if (timeOffset < 1440) {return "night"} // 22:00 - 23:59
+    else {return "???"}
 }
 
 function changeEffect(effect, enable=true, duration=0, absolute=false) {
@@ -1104,6 +1293,25 @@ function calcEnergyDebuff() {
     } else {
         return energy / 70 + 0.5
     }
+}
+
+function calcStatDebuff(stat=null) {
+    let multi = 1
+    if (energy < 35) {
+        multi *= (energy / 70 + 0.5)
+    }
+    if (stat == "spd") {
+        if (weather == "foggy") {multi *= 0.75}
+    }
+    return multi
+}
+
+function calcEnemyStatDebuff(stat=null) {
+    let multi = 1
+    if (stat == "spd") {
+        if (weather == "foggy") {multi *= 0.75}
+    }
+    return multi
 }
 
 function changeHp(amount) {
@@ -1300,17 +1508,24 @@ function changeQuestProgress(type, stat, value) {
     }
 }
 
-function changeBattlestat(stat, amount) {
+function changeBattlestat(stat, amount, absolute=false) {
     let multi = 1
-    multi = multi * (1 + getSkillLevel("training") * 0.02)
-    multi = multi * calcEnergyDebuff()
-    if (effects['exercisePill']) {
-        multi *= 1.5
+    if (absolute == false) {
+        multi = multi * (1 + getSkillLevel("training") * 0.02)
+        multi = multi * calcEnergyDebuff()
+        if (effects['exercisePill']) {
+            multi *= 1.5
+        }
     }
+    const oldRank = getRank()
     battleStats[stat] += amount * multi
     updateBattlestats(stat)
     changeQuestProgress("stats", stat, battleStats[stat])
     updateLevelText()
+    const newRank = getRank()
+    if (newRank != oldRank) {
+        insertLog(`Rank Changed: ${colorGen("#88bb00", oldRank)} -> ${colorGen("#88bb00", newRank)}`)
+    }
 }
 
 function generateShop(shopName) {
@@ -1576,7 +1791,7 @@ const sceneTicks = new Map([
         }
     }],
     ["sleep", function() {
-        changeEnergy(2.05)
+        changeEnergy(2)
         noSleepTime = Math.max(noSleepTime - 40, 0)
         changeTitleXp("sleeper", 1)
     }],
@@ -1633,8 +1848,13 @@ const sceneTicks = new Map([
 ])
 
 const effectFunctions = new Map([
-    ["sleepDeprived", function() {
-        changeEnergy(-0.1)
+    ["sleepDeprived", function(time) {
+        if (currentScene != "sleep") {
+            changeEnergy(-0.1 * time)
+        }
+    }],
+    ["wet", function(time) {
+        changeEnergy(-0.02 * time)
     }]
 ])
 
@@ -1725,9 +1945,12 @@ function tick() {
         if (combatData['enemyHealth'] > 0) {
             const effectiveStats = {}
             for (const [stat, value] of Object.entries(battleStats)) {
-                effectiveStats[stat] = value * calcEnergyDebuff()
+                effectiveStats[stat] = value * calcStatDebuff(stat)
             }
-            const enemyStats = combatData['enemyStats']
+            const enemyStats = {}
+            for (const [stat, value] of Object.entries(combatData['enemyStats'])) {
+                enemyStats[stat] = value * calcEnemyStatDebuff(stat)
+            }
 
             let turnDmg = getBaseDamage(effectiveStats['str']) * (Math.random() * 0.4 + 0.8)
             turnDmg = turnDmg * (1 + getSkillLevel("fighting") * 0.05)
@@ -1797,8 +2020,6 @@ function tick() {
         }
     }
 
-    changeEnergy(-0.05)
-
     if (noSleepTime >= 1200) {
         changeEffect("sleepDeprived")
     } else {
@@ -1808,20 +2029,36 @@ function tick() {
     const handler = sceneTicks.get(currentScene)
     if (handler) {handler()}
 
-    for (const effect in effects) {
-        const handler = effectFunctions.get(effect)
-        if (handler) {handler()}
-    }
-
     // updateBar("health") No longer needed as changehp function updates it
     // updateBar("energy") No longer needed as changeenergy function updates it
     // updateBar("xp") No longer needed as changexp function updates it
-    // updateStats() No longer needed as changestat function updates it
+    updateBattlestats()
+    if (combatData['enemy'] != null) {updateEnemyBattlestats()}
 
     updateTooltip()
 }
 
-setInterval(tick, 1000)
+const interval = 1000
+let lastTickTime = performance.now()
+function tickLoop() {
+    const now = performance.now()
+    const elapsed = now - lastTickTime
+
+    if (elapsed >= interval) {
+        let missedTicks = Math.min(Math.floor(elapsed / interval), 1000)
+
+        for (let i = 0; i < missedTicks; i++) {
+            tick()
+        }
+
+        lastTickTime = now - (elapsed % interval)
+    }
+
+    setTimeout(tickLoop, Math.max(0, interval - (performance.now() - lastTickTime)))
+}
+tickLoop()
+// setInterval(tick, 1000)
+
 setInterval(function() {
     if (currentScene != "intro1") {
         saveToLocal(makeSave())
@@ -2022,6 +2259,24 @@ function changeTitle(newTitle) {
 
 function genTrainingAreaText(target) {
     return `{![dumbbells.png]Train Strength|${target}_str}\n{![shield.png]Train Defense|${target}_def}\n{![treadmill.png]Train Speed|${target}_spd}\n{![dexterity.png]Train Dexterity|${target}_dex}`
+}
+
+const sceneProperties = {
+    "housingArea": ["outdoors"],
+    "townCenter": ["outdoors"],
+    "noticeBoard": ["outdoors"],
+    "trainingGrounds": ["outdoors"],
+    "trainingGrounds_str": ["outdoors"],
+    "trainingGrounds_def": ["outdoors"],
+    "trainingGrounds_spd": ["outdoors"],
+    "trainingGrounds_dex": ["outdoors"],
+    "dojoYard": ["outdoors"],
+    "dojoGolems": ["outdoors"],
+    "dojo_golemFight": ["outdoors"],
+    "alley": ["outdoors"],
+    "townNorth": ["outdoors"],
+    "park": ["outdoors"],
+    "parkExplore": ["outdoors"]
 }
 
 class scenes {
@@ -2586,6 +2841,8 @@ function makeSave() { // Optimisation at all costs
         stats, // Stats
         knownRecipes, craftInfo, craftingSelection, // Crafting
         exploreData, travelInfo, // Exploration
+        debugEnabled, // Debug
+        weather, weatherStartTime // Environment
     }
     base['version'] = VERSION
     // Stats
@@ -2628,6 +2885,15 @@ function makeSave() { // Optimisation at all costs
     // Exploration
     if (base['exploreData']['area'] == null) {base['exploreData'] = undefined}
     if (base['travelInfo']['destination'] == null) {base['travelInfo'] = undefined}
+
+    // Debug
+    if (base['debugEnabled'] == false) {base['debugEnabled'] = undefined}
+
+    // Environment
+    if (base['weather'] == "clear") {
+        base['weather'] = undefined
+        base['weatherStartTime'] = undefined
+    }
 
     base = Object.fromEntries(Object.entries(base).filter(([key, value]) => value !== undefined))
     return base
@@ -2680,38 +2946,31 @@ function loadSave(dict) {
     energy = dict['energy'] ?? energy
     noSleepTime = dict['noSleepTime'] ?? noSleepTime
     titleScores = dict['titleScores'] ?? titleScores
+    stats = dict['stats'] ?? stats
+    if (dict['playerTitle'] != "Unknown") {changeTitle(dict['playerTitle'])}
+
+    changeXp(dict['xp'])
+    changeMoney(dict['money'] || 0)
+    health = dict['health']
+    updateBar("health")
+    updateBar("energy")
+    document.getElementById("time").textContent = formatTime(time)
+
+    if (dict['skills']) {
+        for (const [skill, xp] of Object.entries(dict['skills'])) {
+            changeSkill(skill, xp)
+        }
+    }
+
+    if (dict['effects']) {
+        for (const [effect, time] of Object.entries(dict['effects'])) {
+            changeEffect(effect, true, time, true)
+        }
+    }
     
     // Inventory
     inventoryNonStackableIncrement = dict['inventoryNonStackableIncrement'] ?? inventoryNonStackableIncrement
     shopStorage = dict['shopStorage'] ?? shopStorage
-    
-    // Combat
-    combatData = dict['combatData'] ?? combatData
-    team = dict['team'] ?? team
-    arenaData = dict['arenaData'] ?? arenaData
-
-    // Scenes
-    oldScene = dict['oldScene'] ?? oldScene
-    currentScene = dict['currentScene'] ?? currentScene
-    sceneText = dict['sceneText'] ?? sceneText
-
-    // Quests
-    quests = dict['quests'] ?? quests
-    completedQuests = dict['completedQuests'] ?? completedQuests
-    checks = dict['checks'] ?? checks
-
-    // Stats
-    stats = dict['stats'] ?? stats
-
-    // Crafting
-    knownRecipes = dict['knownRecipes'] ?? knownRecipes
-    craftInfo = dict['craftInfo'] ?? craftInfo
-    craftingSelection = dict['craftingSelection'] ?? craftingSelection
-
-    // Exploration
-    exploreData = dict['exploreData'] ?? exploreData
-    travelInfo = dict['travelInfo'] ?? travelInfo
-
     if (dict['inventory']) {
         for (const [item, amount] of Object.entries(dict['inventory'])) {
             changeInventory(item, amount)
@@ -2743,18 +3002,53 @@ function loadSave(dict) {
             }
         }
     }
+
+    if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
     
-    if (dict['skills']) {
-        for (const [skill, xp] of Object.entries(dict['skills'])) {
-            changeSkill(skill, xp)
+    // Combat
+    combatData = dict['combatData'] ?? combatData
+    team = dict['team'] ?? team
+    arenaData = dict['arenaData'] ?? arenaData
+
+    if (combatData['enemy'] != null) {
+        for (const stat of statTypes) {
+            document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
+        }
+
+        document.getElementById("enemy-name").textContent = enemyData[combatData['enemy']]['name']
+        updateBar("enemyHealth")
+
+        document.getElementById("attack-info-left").style.display = ""
+        document.getElementById("attack-info-divider").style.display = ""
+        document.getElementById("attack-info-right").style.display = ""
+    }
+
+    // Scenes
+    oldScene = dict['oldScene'] ?? oldScene
+    currentScene = dict['currentScene'] ?? currentScene
+    sceneText = dict['sceneText'] ?? sceneText
+
+    // Quests
+    quests = dict['quests'] ?? quests
+    completedQuests = dict['completedQuests'] ?? completedQuests
+    checks = dict['checks'] ?? checks
+
+    if (dict['quests']) {
+        for (const quest in dict['quests']) {
+            giveQuest(quest)
         }
     }
 
-    if (dict['effects']) {
-        for (const [effect, time] of Object.entries(dict['effects'])) {
-            changeEffect(effect, true, time, true)
+    if (dict['completedQuests']) {
+        for (const quest of dict['completedQuests']) {
+            giveQuest(quest, complete=true)
         }
     }
+
+    // Crafting
+    knownRecipes = dict['knownRecipes'] ?? knownRecipes
+    craftInfo = dict['craftInfo'] ?? craftInfo
+    craftingSelection = dict['craftingSelection'] ?? craftingSelection
 
     if (dict['craftInfo']) {
         for (const itemId of dict['craftInfo']['using']) {
@@ -2769,43 +3063,20 @@ function loadSave(dict) {
         }
     }
 
-    // Enemy loading
-    if (combatData['enemy'] != null) {
-        const statTypes = ["str", "def", "spd", "dex"]
-        for (const stat of statTypes) {
-            document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
-        }
+    // Exploration
+    exploreData = dict['exploreData'] ?? exploreData
+    travelInfo = dict['travelInfo'] ?? travelInfo
 
-        document.getElementById("enemy-name").textContent = enemyData[combatData['enemy']]['name']
-        updateBar("enemyHealth")
+    // Debug
+    if (dict['debugEnabled']) {toggleDebug(true)}
 
-        document.getElementById("attack-info-left").style.display = ""
-        document.getElementById("attack-info-divider").style.display = ""
-        document.getElementById("attack-info-right").style.display = ""
+    // Environment
+    if (dict['weather']) {
+        changeWeather(dict['weather'])
+        weatherStartTime = dict['weatherStartTime']
     }
 
-    if (dict['quests']) {
-        for (const quest in dict['quests']) {
-            giveQuest(quest)
-        }
-    }
-
-    if (dict['completedQuests']) {
-        for (const quest of dict['completedQuests']) {
-            giveQuest(quest, complete=true)
-        }
-    }
-
-    changeXp(dict['xp'])
-    changeMoney(dict['money'] || 0)
-    health = dict['health']
-    updateBar("health")
-    updateBar("energy")
-    document.getElementById("center-top").textContent = formatTime(time)
-
-    if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
-    if (dict['playerTitle'] != "Unknown") {changeTitle(dict['playerTitle'])}
-
+    // End
     processText(sceneText)
     if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
 
@@ -2843,8 +3114,106 @@ if (localStorage.getItem("savetemp") == undefined) {
 }
 
 window.addEventListener("beforeunload", function() {
-    if (saveEnabled == true) {
+    if (saveEnabled == true && currentScene != "intro1") {
         saveToLocal(makeSave())
+    }
+})
+
+// Debug
+function toggleDebug(value) {
+    if (value == true) {
+        document.getElementById("debug-button").style.display = ""
+        debugEnabled = true
+    } else {
+        document.getElementById("debug-button").style.display = "none"
+        if (document.getElementById("sidebar-menu-debug").style.display != "none") {
+            document.getElementById("sidebar-menu-debug").style.display = "none"
+            document.getElementById("sidebar-menu-inventory").style.display = ""
+            document.getElementById("inventory-button").style.borderColor = "#7777cc"
+            document.getElementById("debug-button").style.borderColor = ""
+        }
+        debugEnabled = false
+    }
+}
+
+for (const stat of statTypes) {
+    document.getElementById(`debug-change-${stat}`).addEventListener("click", function() {
+        changeBattlestat(stat, Number(document.getElementById("debug-stat-input").value), true)
+    })
+}
+
+document.getElementById("debug-reload-scene").addEventListener("click", function() {
+    playTransition()
+    sceneManager(currentScene)
+})
+
+const allScenes = Object.getOwnPropertyNames(scenes).filter(prop => typeof scenes[prop] == "function")
+const suggestionsContainer = document.getElementById("debug-scene-jump-autocomplete-suggestions")
+const sceneJumpInput = document.getElementById("debug-scene-jump-input")
+let selectedIndex = -1
+
+sceneJumpInput.addEventListener("input", function(e) {
+    const query = sceneJumpInput.value.toLowerCase()
+    if (suggestionsContainer.firstChild) {
+        while (suggestionsContainer.firstChild) {
+            suggestionsContainer.removeChild(suggestionsContainer.lastChild)
+        }
+    }
+
+    selectedIndex = -1
+    // if (query) {
+    const filteredData = allScenes.filter(item => item.toLowerCase().includes(query))
+    let i = 0
+    for (const item of filteredData) {
+        const suggestion = document.createElement("div")
+        suggestion.className = "suggestion"
+        suggestion.textContent = item
+
+        suggestion.addEventListener("click", function() {
+            sceneJumpInput.value = item
+            suggestionsContainer.replaceChildren()
+        })
+
+        suggestionsContainer.appendChild(suggestion)
+        i += 1
+        if (i >= 20) {
+            break
+        }
+    }
+    // }
+})
+
+function updateSelection(suggestions) {
+    suggestions.forEach(function(suggestion, index) {
+        suggestion.classList.remove("selected")
+        if (index == selectedIndex) {
+            suggestion.classList.add("selected")
+        }
+    })
+}
+
+sceneJumpInput.addEventListener("keydown", function(e) {
+    const suggestions = document.querySelectorAll(".suggestion")
+
+    if (e.key == "ArrowDown") {
+        if (selectedIndex < suggestions.length - 1) {
+            selectedIndex += 1
+            updateSelection(suggestions)
+        }
+    } else if (e.key == "ArrowUp") {
+        if (selectedIndex > 0) {
+            selectedIndex -= 1
+            updateSelection(suggestions)
+        }
+    } else if (e.key == "Enter" && selectedIndex >= 0) {
+        sceneJumpInput.value = suggestions[selectedIndex].textContent
+        suggestionsContainer.innerHTML = ""
+        selectedIndex = -1
+    } else if (e.key == "Enter") {
+        playTransition()
+        sceneManager(sceneJumpInput.value)
+        sceneJumpInput.value = ""
+        suggestionsContainer.replaceChildren()
     }
 })
 

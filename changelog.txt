@@ -1,3 +1,15 @@
+v0.15
+- Improve tick handler
+- Fix ignoring save when no actions have been made
+- Add debug menu
+- Add rank change log
+- Organise save load function
+- Add weather
+- Maybe a somewhat better code structure
+- Add scene properties
+- Fix energy loss handling
+- Optimise updateBattlestats function
+
 v0.14
 - Optimise save size
 
