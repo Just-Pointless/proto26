@@ -242,6 +242,7 @@ img {
 
 .sidebar-menu {
     width: calc(100% - 10px);
+    height: calc(100% - 40px);
     margin-left: 5px;
     margin-top: 10px;
 }

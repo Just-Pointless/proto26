@@ -1,4 +1,4 @@
-const VERSION = "0.15"
+const VERSION = "0.16"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -64,7 +64,8 @@ var craftInfo = {
     "completed": 0,
     "required": {},
     "using": [],
-    "selected": null
+    "selected": null,
+    "skillXp": 0,
 }
 var team = "none"
 var equipment = {
@@ -145,6 +146,55 @@ const enemyData = {
     },
     "human": {
         "name": "Human"
+    },
+    "greenSlime": {
+        "name": "Green Slime",
+        "health": [50, 100],
+        "str": [4, 6],
+        "def": [1, 2],
+        "spd": [2, 3],
+        "dex": [3, 4],
+        "loot": [
+            {"item": "slime", "chances": {
+                0: 40,
+                1: 50,
+                2: 10
+            }}
+        ],
+        "xp": [7, 10]
+    },
+    "blueSlime": {
+        "name": "Blue Slime",
+        "health": [80, 140],
+        "str": [5, 7],
+        "def": [1.5, 2.5],
+        "spd": [3, 4],
+        "dex": [5, 6],
+        "loot": [
+            {"item": "slime", "chances": {
+                0: 20,
+                1: 60,
+                2: 10,
+                3: 10
+            }}
+        ],
+        "xp": [10, 12]
+    },
+    "purpleSlime": {
+        "name": "Purple Slime",
+        "health": [150, 200],
+        "str": [9, 12],
+        "def": [4, 6],
+        "spd": [5, 7],
+        "dex": [7, 9],
+        "loot": [
+            {"item": "slime", "chances": {
+                1: 50,
+                2: 30,
+                3: 20
+            }}
+        ],
+        "xp": [15, 20]
     }
 }
 const skillData = {
@@ -277,7 +327,13 @@ const itemData = {
             "class": "weapon",
             "damage": [1.5, 1.7]
         }
-    }
+    },
+    "slime": {
+        "name": "Slime",
+        "desc": "It's sticky",
+        "class": "misc",
+        "weight": 2
+    },
 }
 const effectData = {
     "sleepDeprived": {
@@ -590,9 +646,25 @@ document.getElementById("log").addEventListener("scroll", function() {
     logAutoScroll = scrollHeight - scrollTop - clientHeight < 24
 })
 
-function insertLog(content, tooltip=null) {
-    let div = document.createElement("div")
-    div.className = "log-entry"
+var logIncrement = 0
+function insertLog(content, tooltip=null, id=null) {
+    let div
+    if (id != null && id == logIncrement - 1 && document.getElementById(`log-${id}`)) {
+        div = document.getElementById(`log-${id}`)
+    } else {
+        div = document.createElement("div")
+        div.className = "log-entry"
+        div.id = `log-${logIncrement}`
+        logIncrement += 1
+
+        document.getElementById("log").appendChild(div)
+
+        while (document.getElementById("log").children.length > 200) {
+            const removed = document.getElementById("log").firstChild
+            document.getElementById("log").removeChild(removed)
+        }
+    }
+
     if (content.includes("<")) {
         div.innerHTML = content
     } else {
@@ -604,18 +676,8 @@ function insertLog(content, tooltip=null) {
         div.setAttribute("data-tooltip-text", tooltip[1])
     }
 
-    document.getElementById("log").appendChild(div)
-
-    while (document.getElementById("log").children.length > 200) {
-        const removed = document.getElementById("log").firstChild
-        // const height = removed.offsetHeight
-        document.getElementById("log").removeChild(removed)
-        // if (!logAutoScroll) {
-        //     document.getElementById("log").scrollTop += height
-        // }
-    }
-
     if (logAutoScroll) {document.getElementById("log").scrollTop = document.getElementById("log").scrollHeight}
+    return logIncrement - 1
 }
 
 // function getFuture(time, day, increase) {
@@ -645,6 +707,7 @@ function randomRange(min, max, decimals=-1) {
 }
 
 function generateEnemy(enemyName, stats=null) {
+    if (combatData['enemy'] != null) {return}
     combatData['enemy'] = enemyName
     const enemy = stats || enemyData[enemyName]
     combatData['enemyProperties'] = enemy['properties']
@@ -798,7 +861,7 @@ function formatNumber(num, round=false) {
     }
 
     const value = num / 1000 ** exp
-    const decimals = value < 10 ? 2 : value < 100 ? 1 : 0
+    const decimals = value < 1 ? 3 : value < 10 ? 2 : value < 100 ? 1 : 0
     if (round == false || num >= 1000) {
         return sign + value.toFixed(decimals).replace(/\.0+$/, "") + units[exp]
     } else {
@@ -1508,6 +1571,25 @@ function changeQuestProgress(type, stat, value) {
     }
 }
 
+var trainingSession = {
+    "logId": null,
+    "gain": 0,
+    "stat": null
+}
+function trainingAreaHandler(stat, gymName="none") {
+    const gain = changeBattlestat(stat, gyms[gymName][stat])
+    changeSkill("training", 1)
+    changeTitleXp("athlete", 1)
+    changeEnergy(-0.2)
+    if (stat != trainingSession['stat']) {
+        trainingSession['stat'] = stat
+        trainingSession['logId'] = null
+        trainingSession['gain'] = 0
+    }
+    trainingSession['gain'] += gain
+    trainingSession['logId'] = insertLog(`+${formatNumber(trainingSession['gain'])} (+${formatNumber(gain)}/m) ${stat.replace("str", "Strength").replace("def", "Defense").replace("spd", "Speed").replace("dex", "Dexterity")}`, null, trainingSession['logId'])
+}
+
 function changeBattlestat(stat, amount, absolute=false) {
     let multi = 1
     if (absolute == false) {
@@ -1526,6 +1608,7 @@ function changeBattlestat(stat, amount, absolute=false) {
     if (newRank != oldRank) {
         insertLog(`Rank Changed: ${colorGen("#88bb00", oldRank)} -> ${colorGen("#88bb00", newRank)}`)
     }
+    return amount * multi
 }
 
 function generateShop(shopName) {
@@ -1762,33 +1845,19 @@ function onDeathFunctions(name) {
 
 const sceneTicks = new Map([
     ["trainingGrounds_str", function() {
-        changeBattlestat("str", gyms['none']['str'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("str", "none")
     }],
     ["trainingGrounds_def", function() {
-        changeBattlestat("def", gyms['none']['def'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("def", "none")
     }],
     ["trainingGrounds_spd", function() {
-        changeBattlestat("spd", gyms['none']['spd'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("spd", "none")
     }],
     ["trainingGrounds_dex", function() {
-        changeBattlestat("dex", gyms['none']['dex'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("dex", "none")
     }],
     ["dojo_trainingDummy", function() {
-        if (combatData['enemy'] == null) {
-            generateEnemy("strawDummy")
-        }
+        generateEnemy("strawDummy")
     }],
     ["sleep", function() {
         changeEnergy(2)
@@ -1802,33 +1871,19 @@ const sceneTicks = new Map([
         if (!quests['dojoIntro3'] && !completedQuests.includes("dojoIntro3")) {
             return
         }
-        if (combatData['enemy'] == null) {
-            generateEnemy("mouse")
-        }
+        generateEnemy("mouse")
     }],
     ["trainingGrounds_nextLevel_str", function() {
-        changeBattlestat("str", gyms['nextLevel']['str'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("str", "nextLevel")
     }],
     ["trainingGrounds_nextLevel_def", function() {
-        changeBattlestat("def", gyms['nextLevel']['def'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("def", "nextLevel")
     }],
     ["trainingGrounds_nextLevel_spd", function() {
-        changeBattlestat("spd", gyms['nextLevel']['spd'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("spd", "nextLevel")
     }],
     ["trainingGrounds_nextLevel_dex", function() {
-        changeBattlestat("dex", gyms['nextLevel']['dex'])
-        changeSkill("training", 1)
-        changeTitleXp("athlete", 1)
-        changeEnergy(-0.2)
+        trainingAreaHandler("dex", "nextLevel")
     }],
     ["theArenaWinMatch", function() {
         if (time >= arenaData['endTime']) {
@@ -1844,7 +1899,19 @@ const sceneTicks = new Map([
             playTransition()
             sceneManager("theArenaWalkIn")
         }
-    }]
+    }],
+    ["grassPlains", function() {
+        if (travelInfo['destination'] == null && (checks['spawnDelay'] == null || checks['spawnDelay'] <= time)) {
+            const rng = randomRange(1, 1000)
+            if (rng <= 750) {
+                generateEnemy("greenSlime")
+            } else if (rng <= 900) {
+                generateEnemy("blueSlime")
+            } else {
+                generateEnemy("purpleSlime")
+            }
+        }
+    }],
 ])
 
 const effectFunctions = new Map([
@@ -1863,6 +1930,12 @@ const explorePools = {
         "difficulty": [10, 15],
         "loot": {
             "grass": 4,
+            "woodenStick": 1
+        }
+    },
+    "forestLayer1Explore": {
+        "difficulty": [15, 20],
+        "loot": {
             "woodenStick": 1
         }
     }
@@ -2060,7 +2133,7 @@ tickLoop()
 // setInterval(tick, 1000)
 
 setInterval(function() {
-    if (currentScene != "intro1") {
+    if (saveEnabled == true && currentScene != "intro1") {
         saveToLocal(makeSave())
         document.getElementById("last-save").textContent = `Last Save: ${new Date().toLocaleTimeString()}`
     }
@@ -2276,7 +2349,12 @@ const sceneProperties = {
     "alley": ["outdoors"],
     "townNorth": ["outdoors"],
     "park": ["outdoors"],
-    "parkExplore": ["outdoors"]
+    "parkExplore": ["outdoors"],
+    "townGatesNorth": ["outdoors"],
+    "townGatesNorthExterior": ["outdoors"],
+    "grassPlains": ["outdoors"],
+    "forestLayer1": ["outdoors"],
+    "forestLayer1Explore": ["outdoors"]
 }
 
 class scenes {
@@ -2337,7 +2415,7 @@ class scenes {
     }
 
     static home() {
-        return `You are in your home. You can rest here.\n\n{![bed.png]Sleep|sleep}\n{![storage.png]Storage|storage}\n{![table.png]Table|table}\n\n{![leave.png]Leave|housingArea}`
+        return `You are in your home. You can rest here.\n\n{![bed.png]Sleep|sleep}\n{![storage.png]Storage|storage}\n{![table.png]Crafting Table|table}\n\n{![leave.png]Leave|housingArea}`
     }
 
     static sleep() {
@@ -2506,12 +2584,12 @@ class scenes {
             {
                 "quest": "dojoIntro4",
                 "pillReward": 5,
-                "message": "Congratulations on beating the golem, there are more available for you to fight if you wish. For my final quest: I want you to reach 10 in every stat. Upon completion you'll gain permission to explore outside of the city. This may take you a while and I wouldn't expect you to complete it quickly. You can continue exploring other areas inside the city while working your way towards completion."
+                "message": "Congratulations on beating the golem, there are more available for you to fight if you wish. For my final quest: I want you to reach 10 in every stat. Upon completion you'll gain permission to explore outside of the town. This may take you a while and I wouldn't expect you to complete it quickly. You can continue exploring other areas inside the town while working your way towards completion."
             },
             {
                 "quest": "dojoIntro5",
                 "pillReward": 7,
-                "message": "This is the end of my questline for now, you are free to explore outside the city but be careful as there are stronger enemies around."
+                "message": "This is the end of my questline for now, you are free to explore outside the town but be careful as there are stronger enemies around."
             }
         ]
         for (let i = 0; i < dojoQuests.length; i++) {
@@ -2581,7 +2659,7 @@ class scenes {
     }
 
     static townNorth() {
-        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{![park.png]Park|park}\n{![sword.png]Weapon Shop|weaponShop}\n{![sword.png]The Arena|theArenaEntrance}\n\n{![town_center.png]Town Center|townCenter|250}`
+        return `You are at the north of the town. This area is commonly used for entertainment activites.\n\n{![park.png]Park|park}\n{![sword.png]Weapon Shop|weaponShop}\n{![sword.png]The Arena|theArenaEntrance}\n\n{![leave.png]Town Gates|townGatesNorth|250}\n{![town_center.png]Town Center|townCenter|250}`
     }
 
     static park() {
@@ -2599,7 +2677,7 @@ class scenes {
     static theArenaEntrance() {
         arenaData = {}
         let r = `You are in the entrance of the arena.`
-        r += getDayName() == "Sunday" ? `It's quite crowded with many people rushing to join the queue for tickets.${checks['arenaParticipated'] == undefined ? "\n\n{![sword.png]Participate|theArenaSignup}" : ""}` : " It's quite empty, more people would be here on a Sunday."
+        r += getDayName() == "Sunday" ? ` It's quite crowded with many people rushing to join the queue for tickets.${checks['arenaParticipated'] == undefined ? "\n\n{![sword.png]Participate|theArenaSignup}" : ""}` : " It's quite empty, more people would be here on a Sunday."
         r += `\n\n{![leave.png]Leave|townNorth}`
         return r
     }
@@ -2662,6 +2740,29 @@ class scenes {
         r += `\n\n{![leave.png]Leave|theArenaWinMatch}`
         return r
     }
+
+    static townGatesNorth() {
+        let r = `You are standing in front of the town gates.\n\n`
+        r += completedQuests.includes("dojoIntro5") ? `"You have permission to leave the town if you wish. You can come back at any time."\n\n{![leave.png]Leave the town|townGatesNorthExterior}` : `"You're too weak to leave the town on your own, it would be reckless of us to let you through."`
+        r += `\n\n{![arrow_up.png]Town North|townNorth|250}`
+        return r
+    }
+
+    static townGatesNorthExterior() {
+        return `You are standing in front of the exterior of the town gates.\n\n{![enter.png]Enter the town|townGatesNorth}\n{![park.png]Grass Plains|grassPlains|500}`
+    }
+
+    static grassPlains() {
+        return `You are standing in the grass plains. You notice some slimes jumping around.\n\n{Escape|grassPlains|0|grassPlainsEscape}\n\n{Town Gates|townGatesNorthExterior|500|endFight}\n{Forest|forestLayer1|1000|endFight}`
+    }
+
+    static forestLayer1() {
+        return `You are standing near the entrance of the forest. The nearby trees provide some shade.\n\n{![search.png]Explore|forestLayer1Explore}\n\n{![park.png]Grass Plains|grassPlains|1000}`
+    }
+
+    static forestLayer1Explore() {
+        return `You are searching for items in the forest.\n\n{![stop.png]Stop|forestLayer1}`
+    }
 }
 
 class sceneFunctions {
@@ -2718,6 +2819,11 @@ class sceneFunctions {
     static nextLevelClaimExercisePill() {
         changeInventory("exercisePill", checks['nextLevelExercisePills'])
         delete checks['nextLevelExercisePills']
+    }
+
+    static grassPlainsEscape() {
+        endFight()
+        checks['spawnDelay'] = time + 5
     }
 }
 
@@ -2795,11 +2901,11 @@ function processText(text) {
             button.className = "main-link"
             button.id = "button" + num
             button.addEventListener("click", function() {
+                if (splitLinks[num][4] != undefined) {
+                    let params = splitLinks[num][5] ? (splitLinks[num][5].includes(",") ? splitLinks[num][5].split(",") : splitLinks[num][5]) : undefined
+                    sceneFunctions[splitLinks[num][4]](params)
+                }
                 if (splitLinks[num][3] == undefined || splitLinks[num][3] == 0) {
-                    if (splitLinks[num][4] != undefined) {
-                        let params = splitLinks[num][5] ? (splitLinks[num][5].includes(",") ? splitLinks[num][5].split(",") : splitLinks[num][5]) : undefined
-                        sceneFunctions[splitLinks[num][4]](params)
-                    }
                     sceneManager(splitLinks[num][2])
                 } else {
                     let arrival = Math.ceil(time + Number(splitLinks[num][3]) / getMovementSpeed())
@@ -2945,6 +3051,11 @@ function loadSave(dict) {
     battleStats = dict['battleStats'] ?? battleStats
     energy = dict['energy'] ?? energy
     noSleepTime = dict['noSleepTime'] ?? noSleepTime
+    for (const [title, score] of Object.entries(dict['titleScores'])) {
+        if (Number.isNaN(score)) {
+            delete dict['titleScores'][title]
+        }
+    }
     titleScores = dict['titleScores'] ?? titleScores
     stats = dict['stats'] ?? stats
     if (dict['playerTitle'] != "Unknown") {changeTitle(dict['playerTitle'])}
@@ -2958,7 +3069,9 @@ function loadSave(dict) {
 
     if (dict['skills']) {
         for (const [skill, xp] of Object.entries(dict['skills'])) {
-            changeSkill(skill, xp)
+            if (!Number.isNaN(xp)) {
+                changeSkill(skill, xp)
+            }
         }
     }
 
@@ -3089,6 +3202,8 @@ document.getElementById("delete-save").addEventListener("click", function() {
         saveEnabled = false
         localStorage.removeItem("save1")
         window.location.reload()
+    } else if (confirm.toLowerCase() == "confirm to confirm") {
+        alert(`I meant "confirm" not "confirm to confirm"`)
     }
 })
 

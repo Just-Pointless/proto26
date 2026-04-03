@@ -1,3 +1,17 @@
+v0.16
+- Fix typo in the arena
+- Fix accidentally referring to the town as a city
+- Fix saveenabled check in autosave
+- Fix NaN crafting xp
+- Implement save auto fixer
+- Rename table to crafting table for clarity
+- Shorten training area functions
+- Fix sidebar menu scrolling
+- Implement leaving town
+- Add 3 new enemies
+- Fix scene functions not running on movement
+- Display stat gain in log
+
 v0.15
 - Improve tick handler
 - Fix ignoring save when no actions have been made
