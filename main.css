@@ -129,6 +129,22 @@ img {
     font-size: 16px;
 }
 
+#inventory-discard {
+    display: inline;
+    position: absolute;
+    left: 50px;
+    bottom: 0;
+    color: #bb0000;
+    font-size: 16px;
+    outline: 1px solid #bb0000;
+    cursor: pointer;
+    user-select: none;
+}
+
+#inventory-discard:hover {
+    background-color: #664444;
+}
+
 #inventory-weight {
     display: inline;
     position: absolute;
@@ -385,7 +401,7 @@ img {
     background-color: #4444bb;
 }
 
-#effects-bar {
+#effects-bar, #enemy-effects-bar {
     display: flex;
     gap: 4px;
     position: absolute;

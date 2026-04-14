@@ -1,3 +1,12 @@
+v0.17
+- Add accessories
+- Implement discarding of items
+- Add more weapons
+- Fix save loading bugs
+- Improve save loading if checks
+- Implement enemy effects
+- Add more golems
+
 v0.16
 - Fix typo in the arena
 - Fix accidentally referring to the town as a city

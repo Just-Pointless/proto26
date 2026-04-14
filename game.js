@@ -1,4 +1,4 @@
-const VERSION = "0.16"
+const VERSION = "0.17"
 
 document.getElementById("game-title").textContent = `Proto26 v${VERSION}`
 
@@ -33,7 +33,8 @@ var combatData = {
         "spd": 0,
         "dex": 0
     },
-    "enemyProperties": []
+    "enemyProperties": [],
+    "enemyEffects": []
 }
 var checks = {}
 var logAutoScroll = true
@@ -88,6 +89,7 @@ var craftingSelection = false
 var titleScores = {}
 var arenaData = {}
 var debugEnabled = false
+var discardMode = false
 
 const linkRegex = new RegExp(/\{([^|{}]+)\|([^|{}]+)\|?([^|{}]+)?\|?([^|{}(]+)?\(?([^(){}|]+)?\)?}/g)
 const textSplitter = new RegExp(/{[^}]{1,}}/g)
@@ -143,6 +145,24 @@ const enemyData = {
         "spd": 5,
         "dex": 2,
         "xp": 60
+    },
+    "stoneGolem": {
+        "name": "Stone Golem",
+        "health": 800,
+        "str": 40,
+        "def": 40,
+        "spd": 20,
+        "dex": 5,
+        "xp": 100
+    },
+    "coalGolem": {
+        "name": "Coal Golem",
+        "health": 800,
+        "str": 100,
+        "def": 100,
+        "spd": 50,
+        "dex": 30,
+        "xp": 150
     },
     "human": {
         "name": "Human"
@@ -246,6 +266,12 @@ const skillData = {
         "shortName": "Knife M",
         "desc": "Increases damage dealt with knife weapons",
         "scaling": 1.3,
+    },
+    "swordMastery": {
+        "name": "Sword Mastery",
+        "shortName": "Sword M",
+        "desc": "Increases damage dealt with sword weapons",
+        "scaling": 1.3,
     }
 }
 const itemData = {
@@ -261,7 +287,7 @@ const itemData = {
         "class": "consumable",
         "weight": 1,
         "execute": function() {
-            changeEffect("exercisePill", true, 60)
+            changeEffect("exercisePill", 60)
         }
     },
     "strawBasket": {
@@ -334,6 +360,75 @@ const itemData = {
         "class": "misc",
         "weight": 2
     },
+    "strawPendant": {
+        "name": "Straw Pendant",
+        "desc": "Small pendant made out of straw",
+        "class": "gear",
+        "weight": 25,
+        "stackable": false,
+        "combat": {
+            "class": "accessory",
+            "effects": {
+                "all": 0.1
+            }
+        },
+        "crafting": {
+            "complexity": 60,
+            "materials": {
+                "straw": 50
+            }
+        }
+    },
+    "woodenClub": {
+        "name": "Wooden Club",
+        "desc": "Medium sized wooden club, delivers a small shock to your enemies",
+        "class": "gear",
+        "subclass": "club",
+        "weight": 500,
+        "durability": [300, 500],
+        "stackable": false,
+        "combat": {
+            "class": "weapon",
+            "damage": [1.3, 1.5]
+        }
+    },
+    "largeWoodenClub": {
+        "name": "Large Wooden Club",
+        "desc": "A larger version of the wooden club, hard to swing but has a chance of stunning enemies",
+        "class": "gear",
+        "subclass": "club",
+        "weight": 1500,
+        "durability": [800, 1200],
+        "stackable": false,
+        "combat": {
+            "class": "weapon",
+            "damage": [1.5, 1.8],
+            "effects": {
+                "spd": -0.25
+            },
+            "execute": function(dmg) {
+                if (dmg > 0) {
+                    if (Math.random() <= 0.1) {
+                        changeEnemyEffect("stun", 2)
+                        insertLog(colorGen(effectData['stun']['color'], `${enemyData[combatData['enemy']]['name']} is stunned`))
+                    }
+                }
+            }
+        }
+    },
+    "copperSword": {
+        "name": "Copper Sword",
+        "desc": "A basic sword made out of copper, slightly blunt but cuts well",
+        "class": "gear",
+        "subclass": "sword",
+        "weight": 1000,
+        "durability": [1300, 1500],
+        "stackable": false,
+        "combat": {
+            "class": "weapon",
+            "damage": [1.7, 2]
+        }
+    }
 }
 const effectData = {
     "sleepDeprived": {
@@ -350,6 +445,11 @@ const effectData = {
         "name": "Wet",
         "desc": "Energy loss is increased",
         "color": "#5555ff"
+    },
+    "stun": {
+        "name": "Stunned",
+        "desc": "Unable to attack",
+        "color": "#995555"
     }
 }
 const questData = {
@@ -454,7 +554,11 @@ const shopData = {
         {"name": "exercisePill", "chance": 100, "quantity": [1, 3], "price": [5, 7]},
         {"name": "knife", "chance": 50, "quantity": [1, 1], "price": [19, 25]}
     ],
-    "weaponShop": []
+    "weaponShop": [
+        {"name": "woodenClub", "chance": 100, "quantity": [1, 1], "price": [10, 15]},
+        {"name": "largeWoodenClub", "chance": 50, "quantity": [1, 1], "price": [35, 50]},
+        {"name": "copperSword", "chance": 30, "quantity": [1, 1], "price": [35, 50]},
+    ]
 }
 const gyms = {
     "none": {
@@ -602,7 +706,7 @@ function updateBar(bar) {
 function updateBattlestats(statName=null) {
     for (const [stat, value] of Object.entries(battleStats)) {
         if (statName == null || stat == statName) {
-            const effectiveStat = value * calcStatDebuff(stat)
+            const effectiveStat = value * calcStatModifier(stat)
             const debuffPercentage = effectiveStat / value * 100 - 100
             document.getElementById(`stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(value)}${Math.round(debuffPercentage) != 0 ? ` (${debuffPercentage.toFixed(0)}%)` : ""}`
         }
@@ -747,6 +851,10 @@ function endFight() {
         "dex": 0
     }
     combatData['onDeath'] = undefined
+    for (const [effect, value] of Object.entries(combatData['enemyEffects'])) {
+        changeEnemyEffect(effect, null)
+    }
+    combatData['enemyEffects'] = []
 
     document.getElementById("enemy-name").textContent = ""
     updateBar("enemyHealth")
@@ -779,7 +887,7 @@ function killEnemy() {
     stats['kills'][combatData['enemy']] = (stats['kills'][combatData['enemy']] ?? 0) + 1
 
     if (combatData['onDeath']) {
-        onDeathFunctions(combatData['onDeath'])
+        onDeathFunctions.get(combatData['onDeath'])()
     }
 
     endFight()
@@ -956,8 +1064,10 @@ function changeInventory(item, amount, announceReduction=false, itemId=null, new
                 newItemData = {"name": item}
                 const itemCombatData = itemData[item]['combat']
                 if (itemCombatData) {
-                    newItemData['durability'] = randomRange(itemData[item]['durability'][0], itemData[item]['durability'][1], 0)
-                    newItemData['maxDurability'] = newItemData['durability']
+                    if (itemData[item]['durability']) {
+                        newItemData['durability'] = randomRange(itemData[item]['durability'][0], itemData[item]['durability'][1], 0)
+                        newItemData['maxDurability'] = newItemData['durability']
+                    }
                     if (itemCombatData['class'] == "weapon") {
                         newItemData['damage'] = randomRange(itemCombatData['damage'][0], itemCombatData['damage'][1], 2)
                     }
@@ -1003,6 +1113,22 @@ function changeInventory(item, amount, announceReduction=false, itemId=null, new
         } else {
             document.getElementById("inventory-weight").style.color = ""
         }
+    }
+
+    // Obtaining checks
+    if (amount > 0) {
+        if (item == "straw") {
+            if (inventory['straw'] >= 25) {
+                discoverRecipe("strawPendant")
+            }
+        }
+    }
+}
+
+function discoverRecipe(recipe) {
+    if (!knownRecipes.includes(recipe)) {
+        knownRecipes.push(recipe)
+        insertLog(`New Recipe: ${genItemLogText(recipe)}`, [itemData[recipe]['name'], itemData[recipe]['desc']])
     }
 }
 
@@ -1283,7 +1409,7 @@ function changeTime(amount) {
     if (sceneProperties[currentScene]) {
         if (sceneProperties[currentScene].includes("outdoors") && weather == "rain") {
             if (!effects['wet'] || effects['wet'] - time < 60) {
-                changeEffect("wet", true, 5)
+                changeEffect("wet", 5)
             }
         }
     }
@@ -1308,44 +1434,90 @@ function getTimeName() {
     else {return "???"}
 }
 
-function changeEffect(effect, enable=true, duration=0, absolute=false) {
-    if (enable == true) {
-        if (effects[effect] == undefined) {
-            if (duration == 0) {
-                effects[effect] = true
+function changeEffect(effect, duration=0, absolute=false) {
+    if (effects[effect] == undefined && duration != null && duration >= 0) {
+        if (duration == 0) {
+            effects[effect] = true
+        } else {
+            if (absolute == false) {
+                effects[effect] = duration + time
             } else {
-                if (absolute == false) {
-                    effects[effect] = duration + time
-                } else {
-                    effects[effect] = duration
+                effects[effect] = duration
+            }
+        }
+        const div = document.createElement("div")
+        div.className = "effect-icon"
+        div.id = `effect-${effect}`
+        div.style.backgroundColor = effectData[effect]['color']
+        div.setAttribute("data-tooltip-title", effectData[effect]['name'])
+        if (duration == 0 || duration == true) {
+            div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
+        } else {
+            div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
+        }
+
+        document.getElementById("effects-bar").appendChild(div)
+    } else {
+        if (duration == null) {
+            if (effects[effect] != undefined) {
+                delete effects[effect]
+                if (document.getElementById(`effect-${effect}`)) {
+                    document.getElementById(`effect-${effect}`).remove()
                 }
             }
-            const div = document.createElement("div")
-            div.className = "effect-icon"
-            div.id = `effect-${effect}`
-            div.style.backgroundColor = effectData[effect]['color']
-            div.setAttribute("data-tooltip-title", effectData[effect]['name'])
-            if (duration == 0 || duration == true) {
-                div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
-            } else {
-                div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
-            }
-
-            document.getElementById("effects-bar").appendChild(div)
-        } else if (duration != 0) {
-            if (absolute == false) {
+        } else {
+            if (duration == 0) {
+                effects[effect] = true
+            } else if (absolute == false) {
                 effects[effect] += duration
             } else {
                 effects[effect] = duration
             }
             document.getElementById(`effect-${effect}`).setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(effects[effect], true))}`)
         }
-    } else {
-        if (effects[effect] != undefined) {
-            delete effects[effect]
-            if (document.getElementById(`effect-${effect}`)) {
-                document.getElementById(`effect-${effect}`).remove()
+    }
+}
+
+function changeEnemyEffect(effect, duration=0, absolute=false) {
+    if (combatData['enemyEffects'][effect] == undefined && duration != null && duration >= 0) {
+        if (duration == 0) {
+            combatData['enemyEffects'][effect] = true
+        } else {
+            if (absolute == false) {
+                combatData['enemyEffects'][effect] = duration + time
+            } else {
+                combatData['enemyEffects'][effect] = duration
             }
+        }
+        const div = document.createElement("div")
+        div.className = "effect-icon"
+        div.id = `enemy-effect-${effect}`
+        div.style.backgroundColor = effectData[effect]['color']
+        div.setAttribute("data-tooltip-title", effectData[effect]['name'])
+        if (duration == 0 || duration == true) {
+            div.setAttribute("data-tooltip-text", effectData[effect]['desc'])
+        } else {
+            div.setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(combatData['enemyEffects'][effect], true))}`)
+        }
+
+        document.getElementById("enemy-effects-bar").appendChild(div)
+    } else {
+        if (duration == null) {
+            if (combatData['enemyEffects'][effect] != undefined) {
+                delete combatData['enemyEffects'][effect]
+                if (document.getElementById(`enemy-effect-${effect}`)) {
+                    document.getElementById(`enemy-effect-${effect}`).remove()
+                }
+            }
+        } else {
+            if (duration == 0) {
+                combatData['enemyEffects'][effect] = true
+            } else if (absolute == false) {
+                combatData['enemyEffects'][effect] += duration
+            } else {
+                combatData['enemyEffects'][effect] = duration
+            }
+            document.getElementById(`enemy-effect-${effect}`).setAttribute("data-tooltip-text", `${effectData[effect]['desc']}<hr>Ends: ${colorGen("#ccccff", formatTime(combatData['enemyEffects'][effect], true))}`)
         }
     }
 }
@@ -1358,8 +1530,37 @@ function calcEnergyDebuff() {
     }
 }
 
-function calcStatDebuff(stat=null) {
+function getEquipmentStatBuff(equipment, stat) {
+    if (equipment != null) {
+        const effects = itemData[equipment[0]]['combat']['effects']
+        if (effects == undefined) {return 0}
+        if (effects['all']) {
+            return effects['all']
+        } else if (effects[stat]) {
+            return effects[stat]
+        }
+    }
+    return 0
+}
+
+function calcStatModifier(stat=null) {
     let multi = 1
+    let equipmentEndNegative = 1
+    // Increase
+    for (const item of Object.values(equipment)) {
+        if (item != null) {
+            change = getEquipmentStatBuff(item, stat)
+            if (change > 0) {
+                multi += change
+            } else (
+                equipmentEndNegative *= 1 + change
+            )
+        }
+    }
+
+    multi *= equipmentEndNegative
+
+    // Decrease
     if (energy < 35) {
         multi *= (energy / 70 + 0.5)
     }
@@ -1825,23 +2026,35 @@ function changeTitleXp(selectedTitle, amount) {
     }
 }
 
-function onDeathFunctions(name) {
-    if (name == "firstTrainingDummy") {
+const onDeathFunctions = new Map([
+    ["firstTrainingDummy", function() {
         playTransition()
         sceneManager("dojoQuestIntro")
-    } else if (name == "strawGolem") {
+    }],
+    ["strawGolem", function() {
         playTransition()
         sceneManager("dojoYard")
         checks['golemMax'] = Math.max(checks['golemMax'] || 0, 1)
-    } else if (name == "woodGolem") {
+    }],
+    ["woodGolem", function() {
         playTransition()
         sceneManager("dojoYard")
-        //checks['golemMax'] = Math.max(checks['golemMax'] || 0, 2)
-    } else if (name == "arenaWinMatch") {
+        checks['golemMax'] = Math.max(checks['golemMax'] || 0, 2)
+    }],
+    ["stoneGolem", function() {
+        playTransition()
+        sceneManager("dojoYard")
+        checks['golemMax'] = Math.max(checks['golemMax'] || 0, 3)
+    }],
+    ["coalGolem", function() {
+        playTransition()
+        sceneManager("dojoYard")
+    }],
+    ["arenaWinMatch", function() {
         playTransition()
         sceneManager("theArenaWinMatch")
-    }
-}
+    }]
+])
 
 const sceneTicks = new Map([
     ["trainingGrounds_str", function() {
@@ -2008,17 +2221,25 @@ function tick() {
     for (const [effect, value] of Object.entries(effects)) {
         if (Number.isInteger(value)) {
             if (value <= time) {
-                changeEffect(effect, false)
+                changeEffect(effect, null)
             }
         }
     }
 
     // Combat
     if (combatData['enemy'] != null) {
+        for (const [effect, value] of Object.entries(combatData['enemyEffects'])) {
+            if (Number.isInteger(value)) {
+                if (value <= time) {
+                    changeEnemyEffect(effect, null)
+                }
+            }
+        }
+
         if (combatData['enemyHealth'] > 0) {
             const effectiveStats = {}
             for (const [stat, value] of Object.entries(battleStats)) {
-                effectiveStats[stat] = value * calcStatDebuff(stat)
+                effectiveStats[stat] = value * calcStatModifier(stat)
             }
             const enemyStats = {}
             for (const [stat, value] of Object.entries(combatData['enemyStats'])) {
@@ -2051,6 +2272,10 @@ function tick() {
                         changeInventory(item, -1, false, itemId)
                     }
 
+                    if (itemData[item]['combat']['execute']) {
+                        itemData[item]['combat']['execute'](turnActualDmg)
+                    }
+
                     if (skillData[`${itemData[item]['subclass']}Mastery`]) {
                         changeSkill(`${itemData[item]['subclass']}Mastery`, 1)
                     }
@@ -2070,7 +2295,7 @@ function tick() {
             if (combatData['enemyHealth'] <= 0) {
                 killEnemy()
             } else {
-                if (enemyStats['str'] > 0 && enemyStats['spd'] > 0) {
+                if (enemyStats['str'] > 0 && enemyStats['spd'] > 0 && combatData['enemyEffects']['stun'] == undefined) {
                     let turnDmg = getBaseDamage(enemyStats['str']) * (Math.random() * 0.4 + 0.8)
 
                     const turnDmgMitigation = calcDamageMitigation(enemyStats['str'], effectiveStats['def'])
@@ -2096,7 +2321,7 @@ function tick() {
     if (noSleepTime >= 1200) {
         changeEffect("sleepDeprived")
     } else {
-        changeEffect("sleepDeprived", false)
+        changeEffect("sleepDeprived", null)
     }
 
     const handler = sceneTicks.get(currentScene)
@@ -2166,8 +2391,8 @@ function updateTooltip() {
             const [item, itemId] = activeTarget.id.replace("item-", "").split("_")
             const tooltipItemData = inventoryNonStackable[itemId] || storageNonStackable[itemId]
             if (tooltipItemData != undefined) {
-                tooltipText += `<hr>Dmg: ${colorGen("#ff0000", tooltipItemData['damage'])}`
-                tooltipText += `\nDurability: ${colorGen("#ffff00", tooltipItemData['durability'])}`
+                if (tooltipItemData['damage']) {tooltipText += `<hr>Dmg: ${colorGen("#ff0000", tooltipItemData['damage'])}`}
+                if (tooltipItemData['durability']) {tooltipText += `\nDurability: ${colorGen("#ffff00", tooltipItemData['durability'])}`}
             }
         }
 
@@ -2243,8 +2468,13 @@ document.addEventListener("mousemove", function (e) {
 
 function changeEquipment(itemId) {
     const item = inventoryNonStackable[itemId]['name']
-    const equipmentElem = document.getElementById(`equipment-${itemData[item]['combat']['class']}`)
-    const itemClass = itemData[item]['combat']['class']
+    let itemClass = itemData[item]['combat']['class']
+    if (itemClass == 'accessory') {
+        if ((equipment['accessory1'] == null || equipment['accessory1'][1] == itemId) && (equipment['accessory2'] == null || equipment['accessory2'][1] != itemId)) {itemClass = "accessory1"}
+        else {itemClass = "accessory2"}
+    }
+
+    const equipmentElem = document.getElementById(`equipment-${itemClass}`)
     if (equipment[itemClass] == null || itemId != equipment[itemClass][1]) {
         if (equipment[itemClass] != null && itemId != equipment[itemClass][1]) {
             document.getElementById(`item-${equipment[itemClass][0]}_${equipment[itemClass][1]}`).querySelector(".item-equipped").remove()
@@ -2262,7 +2492,7 @@ function changeEquipment(itemId) {
             inventorySlot.appendChild(itemEquipped)
         }
     } else {
-        equipment[itemData[item]['combat']['class']] = null
+        equipment[itemClass] = null
         equipmentElem.querySelector(".equipment-item-text").textContent = equipmentElem.getAttribute("data-tooltip-title")
         equipmentElem.querySelector(".equipment-item-text").style.color = ""
         equipmentElem.querySelector(".bar-fill").style.width = "0"
@@ -2274,6 +2504,15 @@ function changeEquipment(itemId) {
 document.getElementById("inventory-table").addEventListener("click", function(e) {
     if (storageAccess) {return}
     let [item, itemId] = e.target.closest("[id^=\"item-\"]").id.replace("item-", "").split("_")
+
+    if (discardMode == true) {
+        if (item != null) {
+            changeInventory(item, -1, false, itemId)
+            insertLog(`Discarded ${genItemLogText(item, 1)}`, [itemData[item]['name'], itemData[item]['desc']])
+        }
+        return
+    }
+
     if (craftingSelection == true) {
         if (craftInfo['required'][item] != undefined) {
             const inventorySlot = document.getElementById(`item-${item}_${itemId}`)
@@ -2317,6 +2556,18 @@ document.getElementById("inventory-table").addEventListener("click", function(e)
         } else if (itemData[item]['combat']) {
             changeEquipment(itemId)
         }
+    }
+})
+
+document.getElementById("inventory-discard").addEventListener("click", function(e) {
+    if (discardMode == false) {
+        discardMode = true
+        document.getElementById("inventory-discard").style.backgroundColor = "#ff0000"
+        document.getElementById("inventory-discard").style.color = "#000000"
+    } else {
+        discardMode = false
+        document.getElementById("inventory-discard").style.backgroundColor = ""
+        document.getElementById("inventory-discard").style.color = ""
     }
 })
 
@@ -2615,7 +2866,9 @@ class scenes {
 
     static dojoGolems() {
         const golemText = [
-            `{Wood Golem|dojo_golemFight|0|generateEnemy(woodGolem,woodGolem)}\n`
+            `{Wood Golem|dojo_golemFight|0|generateEnemy(woodGolem,woodGolem)}\n`,
+            `{Stone Golem|dojo_golemFight|0|generateEnemy(stoneGolem,stoneGolem)}\n`,
+            `{Coal Golem|dojo_golemFight|0|generateEnemy(coalGolem,coalGolem)}\n`
         ]
         let r = `{Straw Golem|dojo_golemFight|0|generateEnemy(strawGolem,strawGolem)}\n`
         for (let i = 0; i < checks['golemMax'] || 0; i++) {
@@ -3045,155 +3298,160 @@ function loadFromLocal(slot="save1") {
     return dict
 }
 
+function versionCompare(v1, v2) {
+    return v1.localeCompare(v2, undefined, { numeric: true }) < 0;
+}
+
 function loadSave(dict) {
-    // Stats
-    time = dict['time'] ?? time
-    battleStats = dict['battleStats'] ?? battleStats
-    energy = dict['energy'] ?? energy
-    noSleepTime = dict['noSleepTime'] ?? noSleepTime
-    for (const [title, score] of Object.entries(dict['titleScores'])) {
-        if (Number.isNaN(score)) {
-            delete dict['titleScores'][title]
+    try {
+        // Migrations
+        if (versionCompare(dict['version'], "0.17")) {
+            combatData['enemyEffects'] ??= []
         }
-    }
-    titleScores = dict['titleScores'] ?? titleScores
-    stats = dict['stats'] ?? stats
-    if (dict['playerTitle'] != "Unknown") {changeTitle(dict['playerTitle'])}
 
-    changeXp(dict['xp'])
-    changeMoney(dict['money'] || 0)
-    health = dict['health']
-    updateBar("health")
-    updateBar("energy")
-    document.getElementById("time").textContent = formatTime(time)
-
-    if (dict['skills']) {
-        for (const [skill, xp] of Object.entries(dict['skills'])) {
-            if (!Number.isNaN(xp)) {
-                changeSkill(skill, xp)
+        // Stats
+        time = dict['time'] ?? time
+        battleStats = dict['battleStats'] ?? battleStats
+        energy = dict['energy'] ?? energy
+        noSleepTime = dict['noSleepTime'] ?? noSleepTime
+        for (const [title, score] of Object.entries(dict['titleScores'] ?? {})) {
+            if (Number.isNaN(score)) {
+                delete dict['titleScores'][title]
             }
         }
-    }
+        titleScores = dict['titleScores'] ?? titleScores
+        stats = dict['stats'] ?? stats
+        if (dict['playerTitle'] != "Unknown") {changeTitle(dict['playerTitle'])}
 
-    if (dict['effects']) {
-        for (const [effect, time] of Object.entries(dict['effects'])) {
-            changeEffect(effect, true, time, true)
+        changeXp(dict['xp'])
+        changeMoney(dict['money'] || 0)
+        health = dict['health']
+        updateBar("health")
+        updateBar("energy")
+        document.getElementById("time").textContent = formatTime(time)
+
+        if (dict['skills']) {
+            for (const [skill, xp] of Object.entries(dict['skills'])) {
+                if (!Number.isNaN(xp)) {
+                    changeSkill(skill, xp)
+                }
+            }
         }
-    }
-    
-    // Inventory
-    inventoryNonStackableIncrement = dict['inventoryNonStackableIncrement'] ?? inventoryNonStackableIncrement
-    shopStorage = dict['shopStorage'] ?? shopStorage
-    if (dict['inventory']) {
-        for (const [item, amount] of Object.entries(dict['inventory'])) {
+
+        if (dict['effects']) {
+            for (const [effect, time] of Object.entries(dict['effects'])) {
+                changeEffect(effect, time, true)
+            }
+        }
+        
+        // Inventory
+        inventoryNonStackableIncrement = dict['inventoryNonStackableIncrement'] ?? inventoryNonStackableIncrement
+        shopStorage = dict['shopStorage'] ?? shopStorage
+        for (const [item, amount] of Object.entries(dict['inventory'] ?? {})) {
             changeInventory(item, amount)
         }
-    }
-    if (dict['storage']) {
-        for (const [item, amount] of Object.entries(dict['storage'])) {
+        for (const [item, amount] of Object.entries(dict['storage'] ?? {})) {
             changeStorage(item, amount)
         }
-    }
 
-    if (dict['inventoryNonStackable']) {
-        for (const [id, data] of Object.entries(dict['inventoryNonStackable'])) {
+        for (const [id, data] of Object.entries(dict['inventoryNonStackable'] ?? {})) {
             const item = data['name']
             changeInventory(item, 1, false, id, data)
         }
-    }
-    if (dict['storageNonStackable']) {
-        for (const [id, data] of Object.entries(dict['storageNonStackable'])) {
+        for (const [id, data] of Object.entries(dict['storageNonStackable'] ?? {})) {
             const item = data['name']
             changeStorage(item, 1, id, data)
         }
-    }
 
-    if (dict['equipment']) {
-        for (const [item, data] of Object.entries(dict['equipment'])) {
+        for (const [item, data] of Object.entries(dict['equipment'] ?? {})) {
             if (data != null) {
                 changeEquipment(data[1])
             }
         }
-    }
 
-    if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
-    
-    // Combat
-    combatData = dict['combatData'] ?? combatData
-    team = dict['team'] ?? team
-    arenaData = dict['arenaData'] ?? arenaData
+        if (dict['storageAccess'] == true) {toggleStorageAccess(true)}
+        
+        // Combat
+        combatData = dict['combatData'] ?? combatData
+        team = dict['team'] ?? team
+        arenaData = dict['arenaData'] ?? arenaData
 
-    if (combatData['enemy'] != null) {
-        for (const stat of statTypes) {
-            document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
+        if (combatData['enemy'] != null) {
+            for (const stat of statTypes) {
+                document.getElementById(`enemy-stat-${stat}`).textContent = `${stat.charAt(0).toUpperCase()}${stat.slice(1)}: ${formatNumber(combatData['enemyStats'][stat])}`
+            }
+
+            document.getElementById("enemy-name").textContent = enemyData[combatData['enemy']]['name']
+            updateBar("enemyHealth")
+
+            document.getElementById("attack-info-left").style.display = ""
+            document.getElementById("attack-info-divider").style.display = ""
+            document.getElementById("attack-info-right").style.display = ""
         }
 
-        document.getElementById("enemy-name").textContent = enemyData[combatData['enemy']]['name']
-        updateBar("enemyHealth")
+        // Scenes
+        oldScene = dict['oldScene'] ?? oldScene
+        currentScene = dict['currentScene'] ?? currentScene
+        sceneText = dict['sceneText'] ?? sceneText
 
-        document.getElementById("attack-info-left").style.display = ""
-        document.getElementById("attack-info-divider").style.display = ""
-        document.getElementById("attack-info-right").style.display = ""
-    }
+        // Quests
+        quests = dict['quests'] ?? quests
+        completedQuests = dict['completedQuests'] ?? completedQuests
+        checks = dict['checks'] ?? checks
 
-    // Scenes
-    oldScene = dict['oldScene'] ?? oldScene
-    currentScene = dict['currentScene'] ?? currentScene
-    sceneText = dict['sceneText'] ?? sceneText
-
-    // Quests
-    quests = dict['quests'] ?? quests
-    completedQuests = dict['completedQuests'] ?? completedQuests
-    checks = dict['checks'] ?? checks
-
-    if (dict['quests']) {
-        for (const quest in dict['quests']) {
-            giveQuest(quest)
-        }
-    }
-
-    if (dict['completedQuests']) {
-        for (const quest of dict['completedQuests']) {
-            giveQuest(quest, complete=true)
-        }
-    }
-
-    // Crafting
-    knownRecipes = dict['knownRecipes'] ?? knownRecipes
-    craftInfo = dict['craftInfo'] ?? craftInfo
-    craftingSelection = dict['craftingSelection'] ?? craftingSelection
-
-    if (dict['craftInfo']) {
-        for (const itemId of dict['craftInfo']['using']) {
-            const inventorySlot = document.getElementById(`item-${inventoryNonStackable[itemId]['name']}_${itemId}`)
-            if (inventorySlot) {
-                const itemSelected = document.createElement("span")
-                itemSelected.className = "item-selected"
-                itemSelected.textContent = "S"
-
-                inventorySlot.appendChild(itemSelected)
+        if (dict['quests']) {
+            for (const quest in dict['quests']) {
+                giveQuest(quest)
             }
         }
+
+        if (dict['completedQuests']) {
+            for (const quest of dict['completedQuests']) {
+                giveQuest(quest, complete=true)
+            }
+        }
+
+        // Crafting
+        knownRecipes = dict['knownRecipes'] ?? knownRecipes
+        craftInfo = dict['craftInfo'] ?? craftInfo
+        craftingSelection = dict['craftingSelection'] ?? craftingSelection
+
+        if (dict['craftInfo']) {
+            for (const itemId of dict['craftInfo']['using']) {
+                const inventorySlot = document.getElementById(`item-${inventoryNonStackable[itemId]['name']}_${itemId}`)
+                if (inventorySlot) {
+                    const itemSelected = document.createElement("span")
+                    itemSelected.className = "item-selected"
+                    itemSelected.textContent = "S"
+
+                    inventorySlot.appendChild(itemSelected)
+                }
+            }
+        }
+
+        // Exploration
+        exploreData = dict['exploreData'] ?? exploreData
+        travelInfo = dict['travelInfo'] ?? travelInfo
+
+        // Debug
+        if (dict['debugEnabled']) {toggleDebug(true)}
+
+        // Environment
+        if (dict['weather']) {
+            changeWeather(dict['weather'])
+            weatherStartTime = dict['weatherStartTime']
+        }
+
+        // End
+        processText(sceneText)
+        if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
+
+        document.getElementById("log").replaceChildren()
+    } catch (error) {
+        saveEnabled = false
+        insertLog(colorGen("#ff0000", `Loading failed: ${error}`))
+        throw error
     }
-
-    // Exploration
-    exploreData = dict['exploreData'] ?? exploreData
-    travelInfo = dict['travelInfo'] ?? travelInfo
-
-    // Debug
-    if (dict['debugEnabled']) {toggleDebug(true)}
-
-    // Environment
-    if (dict['weather']) {
-        changeWeather(dict['weather'])
-        weatherStartTime = dict['weatherStartTime']
-    }
-
-    // End
-    processText(sceneText)
-    if (sceneEndFunctions[currentScene]) {sceneEndFunctions[currentScene]()}
-
-    document.getElementById("log").replaceChildren()
 }
 
 document.getElementById("delete-save").addEventListener("click", function() {
